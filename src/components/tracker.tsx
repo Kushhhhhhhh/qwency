@@ -1,0 +1,258 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { UserButton } from "@clerk/nextjs";
+import { Activity, ListChecks } from "lucide-react";
+import { saveData, saveFocus, saveNote, saveTags, setMood } from "@/app/actions";
+import { SECTIONS, TOTAL_SECTIONS, completion, effective, sanitize, type Data } from "@/lib/habits";
+import {
+  EMPTY_ENTRY,
+  addDays,
+  localKey,
+  prettyDate,
+  type Entries,
+  type Entry,
+  type Mood,
+} from "@/lib/tracker";
+import { DayStrip } from "./day-strip";
+import { FieldView } from "./field-view";
+import { Overview } from "./overview";
+import { DayVerdict, SectionCard } from "./section-card";
+import { ProgressRing } from "./ui";
+
+const CHEERS: Record<Mood, string[]> = {
+  good: ["Locked in.", "Good day, logged.", "Stacking wins."],
+  meh: ["Logged. Honest beats perfect.", "Noted."],
+  bad: ["Logged. Now name the cause.", "Rough days are data too."],
+};
+
+type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
+
+function streakOf(entries: Entries, today: string) {
+  const logged = (d: string) => completion(entries[d]) > 0;
+  let day = logged(today) ? today : addDays(today, -1);
+  let n = 0;
+  while (logged(day)) {
+    n++;
+    day = addDays(day, -1);
+  }
+  return n;
+}
+
+export function Tracker({
+  initialEntries,
+  initialFocus,
+}: {
+  initialEntries: Entries;
+  initialFocus: Record<string, string>;
+}) {
+  const [entries, setEntries] = useState(initialEntries);
+  const [focuses, setFocuses] = useState(initialFocus);
+  // "today" is the browser's calendar day, so it is only known after mount
+  const [today, setToday] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<"today" | "patterns">("today");
+  const [pulse, setPulse] = useState({ date: "", n: 0 });
+  const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const t = localKey(new Date());
+    setToday(t);
+    setSelected(t);
+  }, []);
+
+  // ---- saving: UI updates first, server catches up in the background ----
+  function say(kind: Status["kind"], text: string) {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    setStatus((s) => ({ kind, text, id: s.id + 1 }));
+    if (kind === "saved") {
+      clearTimer.current = setTimeout(() => setStatus((s) => ({ ...s, kind: "idle" })), 1600);
+    }
+  }
+
+  async function persist(p: Promise<{ ok: boolean }>, okText = "Saved") {
+    say("saving", "Saving…");
+    let ok = false;
+    try {
+      ok = (await p).ok;
+    } catch {
+      ok = false;
+    }
+    if (ok) say("saved", okText);
+    else say("error", "Not saved. Check your connection.");
+  }
+
+  // For typing-driven saves: never pop a toast, only speak up if it failed.
+  async function persistQuiet(p: Promise<{ ok: boolean }>): Promise<boolean> {
+    let ok = false;
+    try {
+      ok = (await p).ok;
+    } catch {
+      ok = false;
+    }
+    if (!ok) say("error", "Not saved. Check your connection.");
+    return ok;
+  }
+
+  const haptic = (ms: number) => typeof navigator !== "undefined" && navigator.vibrate?.(ms);
+
+  /** Apply a change to the selected day; returns the toast text ("Day complete" beats "Saved"). */
+  function change(next: Entry): string {
+    const date = selected!;
+    const before = completion(effective(entries[date], date));
+    const after = completion(effective(next, date));
+    setEntries((prev) => ({ ...prev, [date]: next }));
+    setPulse((p) => ({ date, n: p.n + 1 }));
+    return after === TOTAL_SECTIONS && before < TOTAL_SECTIONS ? "Day complete. Nice work." : "Saved";
+  }
+
+  function setField(key: string, value: string | number | string[] | undefined) {
+    if (!selected) return;
+    const cur = effective(entries[selected], selected); // saves weekend defaults along with the tap
+    const data: Data = { ...cur.data };
+    if (value === undefined) delete data[key];
+    else data[key] = value;
+    const clean = sanitize(data); // also drops answers that no longer apply (e.g. gym type after "Skipped")
+    haptic(8);
+    const text = change({ ...cur, data: clean });
+    persist(saveData(selected, clean), text);
+  }
+
+  function pickMood(mood: Mood) {
+    if (!selected) return;
+    const cur = entries[selected] ?? EMPTY_ENTRY;
+    const next: Mood | null = cur.mood === mood ? null : mood;
+    haptic(next === "bad" ? 24 : 12);
+    const text = change({ ...cur, mood: next, tags: next === "bad" ? cur.tags : [] });
+    persist(setMood(selected, next), next ? (text === "Saved" ? CHEERS[next][Math.floor(Math.random() * CHEERS[next].length)] : text) : "Cleared");
+  }
+
+  // functional updates: these can fire late (debounce / unmount), so never trust a captured entry
+  function patchDay(date: string, patch: Partial<Entry>) {
+    setEntries((prev) => ({ ...prev, [date]: { ...(prev[date] ?? EMPTY_ENTRY), ...patch } }));
+  }
+
+  function pickTags(tags: string[]) {
+    if (!selected) return;
+    haptic(6);
+    patchDay(selected, { tags });
+    persist(saveTags(selected, tags), "Reason saved");
+  }
+
+  function pickNote(note: string) {
+    if (!selected) return Promise.resolve(false);
+    patchDay(selected, { note });
+    return persistQuiet(saveNote(selected, note));
+  }
+
+  function pickFocus(month: string, text: string) {
+    setFocuses((prev) => ({ ...prev, [month]: text }));
+    persistQuiet(saveFocus(month, text));
+  }
+
+  const entry = selected ? effective(entries[selected], selected) : EMPTY_ENTRY;
+  const done = completion(entry);
+
+  return (
+    <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-32 pt-6">
+      <header className="mb-5 flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {tab === "patterns" ? "Patterns" : selected && selected === today ? "Today" : "Earlier"}
+          </h1>
+          <p className="truncate text-sm text-ink/60">
+            {tab === "patterns" ? "What your days add up to" : selected ? prettyDate(selected) : " "}
+          </p>
+        </div>
+        {tab === "today" && selected && <ProgressRing value={done} total={TOTAL_SECTIONS} />}
+        <UserButton
+          appearance={{
+            elements: {
+              avatarBox: { width: 48, height: 48, boxShadow: "0 0 0 2px rgb(80 78 118 / 0.15)" },
+            },
+          }}
+        />
+      </header>
+
+      {!today || !selected ? (
+        <div className="card p-10 text-center text-sm text-ink/60">Loading…</div>
+      ) : tab === "today" ? (
+        <div className="flex flex-col gap-4">
+          <DayStrip entries={entries} today={today} selected={selected} onSelect={setSelected} />
+
+          {SECTIONS.map((s, i) => (
+            <SectionCard
+              // remount per day so local state (note text, amount input) resets
+              key={`${selected}-${s.id}`}
+              id={s.id}
+              title={s.title}
+              hint={s.hint}
+              done={s.done(entry)}
+              index={i}
+            >
+              {s.id === "day" ? (
+                <DayVerdict entry={entry} onMood={pickMood} onTags={pickTags} onNote={pickNote} />
+              ) : (
+                s.fields.map((f) => <FieldView key={f.key} field={f} data={entry.data} onChange={setField} />)
+              )}
+            </SectionCard>
+          ))}
+        </div>
+      ) : (
+        <Overview
+          entries={entries}
+          today={today}
+          focus={focuses[today.slice(0, 7)] ?? ""}
+          streak={streakOf(entries, today)}
+          selected={selected}
+          pulse={pulse}
+          onPick={(d) => {
+            setSelected(d);
+            setTab("today");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          onFocus={pickFocus}
+        />
+      )}
+
+      {status.kind !== "idle" && (
+        <div
+          key={status.id}
+          role="status"
+          className={`toast-in fixed bottom-24 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow-lg shadow-ink/20 ${
+            status.kind === "error"
+              ? "bg-bad text-[#2b2946]"
+              : status.kind === "saved"
+                ? "bg-ink text-cream"
+                : "bg-white text-ink"
+          }`}
+        >
+          {status.text}
+        </div>
+      )}
+
+      <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-full border border-ink/10 bg-white/80 p-1 shadow-xl shadow-ink/15 backdrop-blur-md">
+        {(
+          [
+            ["today", "Today", ListChecks],
+            ["patterns", "Patterns", Activity],
+          ] as const
+        ).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-current={tab === id}
+            className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 ${
+              tab === id ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
+            }`}
+          >
+            <Icon size={17} strokeWidth={2} />
+            {label}
+          </button>
+        ))}
+      </nav>
+    </div>
+  );
+}
