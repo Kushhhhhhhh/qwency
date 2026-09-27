@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Frown, Meh, Minus, Plus, Smile } from "lucide-react";
 import { iconFor } from "@/lib/icons";
-import { MOODS, NOTE_MAX, WHY_TAGS, type Entry, type Mood } from "@/lib/tracker";
-import { Chip } from "./ui";
+import { MOODS, NOTE_MAX, type Entry, type Mood } from "@/lib/tracker";
+import { WhySelector } from "./why-selector";
 
 export const TILE_VARIANTS = ["lilac", "meh", "good"] as const;
 export type TileVariant = (typeof TILE_VARIANTS)[number];
@@ -121,28 +121,7 @@ export function DayVerdict({
         })}
       </div>
 
-      <div className="fold" data-open={bad} inert={!bad}>
-        <div>
-          <div className="pt-5">
-            <p className="text-sm font-semibold">What got in the way?</p>
-            <p className="mb-1 text-xs text-ink/70">Optional. Tap what fits, it saves itself.</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {WHY_TAGS.map((t) => {
-                const on = entry.tags.includes(t.id);
-                return (
-                  <Chip
-                    key={t.id}
-                    on={on}
-                    onClick={() => onTags(on ? entry.tags.filter((x) => x !== t.id) : [...entry.tags, t.id])}
-                  >
-                    {t.label}
-                  </Chip>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
+      <WhySelector tags={entry.tags} open={bad} onChange={onTags} />
 
       {/* a note is just a note for the day: any mood, or none */}
       <div className="pt-4">

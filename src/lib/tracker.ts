@@ -8,12 +8,18 @@ export const MOODS: { id: Mood; label: string; sub: string }[] = [
   { id: "bad", label: "Rough", sub: "Lost it" },
 ];
 
+// One shared, fixed vocabulary for "why did this slip" — used for the overall day verdict
+// and for any bad-toned answer on a field, anywhere in a user's own custom spec. Fixed for
+// everyone (not editable in Setup) so reasons stay comparable across different setups.
 export const WHY_TAGS = [
+  { id: "tired", label: "Tired" },
   { id: "bad-sleep", label: "Bad sleep" },
-  { id: "triggered", label: "Triggered" },
-  { id: "overthinking", label: "Overthinking" },
-  { id: "distraction", label: "Distraction" },
   { id: "stress", label: "Stress" },
+  { id: "distraction", label: "Distraction" },
+  { id: "no-time", label: "No time" },
+  { id: "forgot", label: "Forgot" },
+  { id: "low-motivation", label: "Low motivation" },
+  { id: "triggered", label: "Triggered" },
 ] as const;
 
 export const NOTE_MAX = 1000;

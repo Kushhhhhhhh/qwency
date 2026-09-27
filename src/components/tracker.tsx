@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
-import { Activity, ListChecks, Settings2 } from "lucide-react";
+import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
 import { saveData, saveFocus, saveNote, saveSpec, saveTags, setMood } from "@/app/actions";
-import { completion, effective, pruneHidden, sectionDone, totalSections, type Data, type HabitSpec } from "@/lib/spec";
+import { completion, effective, pruneHidden, sectionDone, totalSections, whyKey, type Data, type HabitSpec } from "@/lib/spec";
 import {
   EMPTY_ENTRY,
   addDays,
@@ -16,6 +16,7 @@ import {
 } from "@/lib/tracker";
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
+import { Journal } from "./journal";
 import { Overview } from "./overview";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
 import { Setup } from "./setup";
@@ -55,7 +56,7 @@ export function Tracker({
   // "today" is the browser's calendar day, so it is only known after mount
   const [today, setToday] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<"today" | "patterns" | "setup">("today");
+  const [tab, setTab] = useState<"today" | "patterns" | "journal" | "setup">("today");
   const [pulse, setPulse] = useState({ date: "", n: 0 });
   const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -124,6 +125,12 @@ export function Tracker({
     persist(saveData(selected, clean), text);
   }
 
+  // "why did this slip" tags for a field live under a companion key in the same `data` blob —
+  // this is just another field-level save, reusing setField's optimistic update + persist.
+  function pickWhy(fieldKey: string, tags: string[]) {
+    setField(whyKey(fieldKey), tags.length ? tags : undefined);
+  }
+
   async function saveSetup(next: HabitSpec): Promise<boolean> {
     const ok = (await saveSpec(next)).ok;
     if (ok) setSpec(next);
@@ -170,16 +177,26 @@ export function Tracker({
       <header className="mb-5 flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {tab === "patterns" ? "Patterns" : tab === "setup" ? "Setup" : selected && selected === today ? "Today" : "Earlier"}
+            {tab === "patterns"
+              ? "Patterns"
+              : tab === "journal"
+                ? "Journal"
+                : tab === "setup"
+                  ? "Setup"
+                  : selected && selected === today
+                    ? "Today"
+                    : "Earlier"}
           </h1>
           <p className="truncate text-sm text-ink/60">
             {tab === "patterns"
               ? "What your days add up to"
-              : tab === "setup"
-                ? "Make it yours"
-                : selected
-                  ? prettyDate(selected)
-                  : " "}
+              : tab === "journal"
+                ? "What you've written, all in one place"
+                : tab === "setup"
+                  ? "Make it yours"
+                  : selected
+                    ? prettyDate(selected)
+                    : " "}
           </p>
         </div>
         {tab === "today" && selected && <ProgressRing value={done} total={totalSections(spec)} />}
@@ -210,7 +227,7 @@ export function Tracker({
               variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
             >
               {s.fields.map((f) => (
-                <FieldView key={f.key} field={f} data={entry.data} onChange={setField} />
+                <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} />
               ))}
             </SectionCard>
           ))}
@@ -245,6 +262,15 @@ export function Tracker({
           }}
           onFocus={pickFocus}
         />
+      ) : tab === "journal" ? (
+        <Journal
+          entries={entries}
+          onPick={(d) => {
+            setSelected(d);
+            setTab("today");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
       ) : (
         <Setup spec={spec} onSave={saveSetup} />
       )}
@@ -265,11 +291,12 @@ export function Tracker({
         </div>
       )}
 
-      <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-1 rounded-full border border-ink/10 bg-white/80 p-1 shadow-xl shadow-ink/15 backdrop-blur-md">
+      <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-ink/10 bg-white/80 p-1 shadow-xl shadow-ink/15 backdrop-blur-md">
         {(
           [
             ["today", "Today", ListChecks],
             ["patterns", "Patterns", Activity],
+            ["journal", "Journal", BookOpen],
             ["setup", "Setup", Settings2],
           ] as const
         ).map(([id, label, Icon]) => (
@@ -278,12 +305,13 @@ export function Tracker({
             type="button"
             onClick={() => setTab(id)}
             aria-current={tab === id}
-            className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 ${
+            aria-label={label}
+            className={`flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 sm:px-4 ${
               tab === id ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
             }`}
           >
             <Icon size={17} strokeWidth={2} />
-            {label}
+            <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
       </nav>

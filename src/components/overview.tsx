@@ -3,10 +3,10 @@
 import { useRef, useState } from "react";
 import { completion, dayProgress, totalSections, type HabitSpec } from "@/lib/spec";
 import { statTiles } from "@/lib/insights";
+import { reasonTally, weeklyReview } from "@/lib/weekly";
 import {
   FOCUS_MAX,
   WEEKDAYS,
-  WHY_TAGS,
   addDays,
   daysInMonth,
   monthOf,
@@ -40,8 +40,9 @@ export function Overview(p: Props) {
     <div className="flex flex-col gap-4">
       <MonthCard {...p} />
       <Contributions {...p} />
+      <WeeklyReview entries={p.entries} today={p.today} spec={p.spec} />
       <Stats entries={p.entries} today={p.today} spec={p.spec} />
-      <Reasons entries={p.entries} />
+      <Reasons entries={p.entries} spec={p.spec} />
     </div>
   );
 }
@@ -63,7 +64,7 @@ function MonthCard({ entries, today, focus, streak, spec, onFocus }: Props) {
   const next = MILESTONES.find((m) => m > streak);
 
   return (
-    <section className="tile tile-lilac p-5">
+    <section className="tile tile-meh p-5">
       <p className="text-xs font-medium uppercase tracking-wider text-ink/70">This month · direction</p>
       <input
         value={text}
@@ -144,7 +145,7 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
   }
 
   return (
-    <section className="tile tile-meh p-5">
+    <section className="tile tile-lilac p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-ink/70">Weekly · awareness</p>
@@ -169,36 +170,41 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
         </div>
       </div>
 
-      <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1">
-        <div className="grid shrink-0 grid-rows-7 gap-[3px] text-[9px] leading-none text-ink/65">
+      <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1 pr-2">
+        <div className="flex shrink-0 flex-col gap-[3px] text-[9px] leading-none text-ink/65">
           {WEEKDAYS.map((d, i) => (
-            <span key={d} className="flex items-center">
+            <span key={d} className="flex h-[13px] items-center">
               {i % 2 === 0 ? d : ""}
             </span>
           ))}
         </div>
-        <div className="grid min-w-0 flex-1 grid-flow-col grid-rows-7 gap-[3px]">
-          {days.map((d, i) => {
-            const popped = pulse.date === d;
-            const future = d > today;
-            return (
-              <button
-                key={popped ? `${d}-${pulse.n}` : d}
-                type="button"
-                disabled={future}
-                onClick={() => onPick(d)}
-                aria-label={`${shortDate(d)}: ${dayProgress(entries[d], d, spec)} of ${total} logged`}
-                title={future ? "" : `${shortDate(d)} · ${dayProgress(entries[d], d, spec)}/${total} logged`}
-                style={{
-                  background: bg(d),
-                  animationDelay: popped ? undefined : `${Math.floor(i / 7) * 16}ms`,
-                }}
-                className={`aspect-square min-w-[14px] rounded-[4px] transition-transform hover:scale-125 ${
-                  future ? "invisible" : ""
-                } ${popped ? "cell-in" : "rise"} ${d === selected ? "ring-2 ring-ink ring-offset-1 ring-offset-cream" : ""}`}
-              />
-            );
-          })}
+        {/* fixed pixel cells, not aspect-ratio/fr-based — that let the browser size the last,
+            partly-empty week's column differently from the rest and it visually blew up */}
+        <div className="flex gap-[3px]">
+          {Array.from({ length: WEEKS }, (_, week) => (
+            <div key={week} className="flex flex-col gap-[3px]">
+              {Array.from({ length: 7 }, (_, day) => {
+                const i = week * 7 + day;
+                const d = days[i];
+                const popped = pulse.date === d;
+                const future = d > today;
+                return (
+                  <button
+                    key={popped ? `${d}-${pulse.n}` : d}
+                    type="button"
+                    disabled={future}
+                    onClick={() => onPick(d)}
+                    aria-label={`${shortDate(d)}: ${dayProgress(entries[d], d, spec)} of ${total} logged`}
+                    title={future ? "" : `${shortDate(d)} · ${dayProgress(entries[d], d, spec)}/${total} logged`}
+                    style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
+                    className={`size-[13px] shrink-0 rounded-[3px] ${future ? "invisible" : ""} ${
+                      popped ? "cell-in" : "rise"
+                    } ${d === selected ? "ring-2 ring-ink" : ""}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
         </div>
       </div>
 
@@ -215,6 +221,55 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
           {mode === "progress" ? "more" : "good"}
         </span>
       </div>
+    </section>
+  );
+}
+
+/* ------------------------------ this week's patterns ------------------------------ */
+// A "miss" is a bad-toned answer on any field this user's own spec defines, or the day
+// verdict itself. This card only speaks up when something repeated (2+ times) and, when
+// there's a real reason behind it, says so — see lib/weekly.ts for exactly what it will
+// and won't claim.
+
+function WeeklyReview({ entries, today, spec }: { entries: Entries; today: string; spec: HabitSpec }) {
+  const { insights, reasons } = weeklyReview(spec, entries, today);
+  if (insights.length === 0 && reasons.length === 0) return null;
+
+  return (
+    <section className="tile tile-good p-5">
+      <p className="text-xs font-medium uppercase tracking-wider text-ink/70">This week · patterns</p>
+      <h2 className="mt-1 text-base font-semibold">What stood out</h2>
+
+      {insights.length > 0 ? (
+        <ul className="mt-3 space-y-2.5">
+          {insights.map((i) => (
+            <li key={i.key} className="flex gap-2.5 text-sm leading-snug">
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-ink/50" />
+              <span>{i.text}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-ink/75">Nothing repeated enough this week to call a pattern — that's fine.</p>
+      )}
+
+      {reasons.length > 0 && (
+        <div className="mt-4 border-t border-white/40 pt-3">
+          <p className="mb-2 text-xs font-medium text-ink/70">Top reasons this week</p>
+          <ul className="space-y-1.5">
+            {reasons.map((r) => (
+              <li key={r.id} className="flex items-center gap-2 text-xs">
+                <span className="w-24 shrink-0">{r.label}</span>
+                <span
+                  className="h-2 rounded-full bg-white/70 transition-[width] duration-500"
+                  style={{ width: `${(r.n / reasons[0].n) * 50}%`, minWidth: 8 }}
+                />
+                <span className="font-semibold tabular-nums">{r.n}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
@@ -251,11 +306,11 @@ function Stats({ entries, today, spec }: { entries: Entries; today: string; spec
 
 /* ------------------------------ reasons = truth ------------------------------ */
 
-function Reasons({ entries }: { entries: Entries }) {
+function Reasons({ entries, spec }: { entries: Entries; spec: HabitSpec }) {
   const bad = Object.entries(entries).filter(([, e]) => e.mood === "bad");
-  const counts = WHY_TAGS.map((t) => ({ ...t, n: bad.filter(([, e]) => e.tags.includes(t.id)).length }))
-    .filter((t) => t.n > 0)
-    .sort((a, b) => b.n - a.n);
+  // every reason logged anywhere — the day verdict, or any bad-toned field answer — not
+  // just day-mood reasons, so this stays in sync with the weekly card above.
+  const counts = reasonTally(spec, entries);
   const max = counts[0]?.n ?? 1;
   const untagged = bad.filter(([, e]) => e.tags.length === 0).length;
 
@@ -264,13 +319,13 @@ function Reasons({ entries }: { entries: Entries }) {
   const worstDay = worst >= 2 ? WEEKDAYS[perWeekday.indexOf(worst)] : null;
 
   return (
-    <section className="tile tile-good p-5">
+    <section className="tile tile-lilac p-5">
       <p className="text-xs font-medium uppercase tracking-wider text-ink/70">Reasons · truth</p>
-      <h2 className="mt-1 text-base font-semibold">Why days go rough</h2>
+      <h2 className="mt-1 text-base font-semibold">Why things go rough</h2>
 
       {counts.length === 0 ? (
         <p className="mt-2 text-sm text-ink/75">
-          Nothing yet. Mark a day as rough and tap what got in the way, and the pattern shows up here.
+          Nothing yet. Mark a day as rough, or tap "why" on a bad-toned answer, and the pattern shows up here.
         </p>
       ) : (
         <ul className="mt-3 space-y-2.5">
@@ -278,7 +333,7 @@ function Reasons({ entries }: { entries: Entries }) {
             <li key={t.id} className="flex items-center gap-3 text-sm">
               <span className="w-28 shrink-0">{t.label}</span>
               <span
-                className="h-2.5 rounded-full bg-bad transition-[width] duration-500"
+                className="h-2.5 rounded-full bg-white/70 transition-[width] duration-500"
                 style={{ width: `${(t.n / max) * 55}%`, minWidth: 10 }}
               />
               <span className="font-semibold tabular-nums">{t.n}</span>

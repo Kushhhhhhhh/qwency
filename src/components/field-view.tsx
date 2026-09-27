@@ -2,42 +2,57 @@
 
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { fieldVisible, type Data, type FieldSpec } from "@/lib/spec";
+import { fieldVisible, hasDedicatedFollowUp, toneOfValue, whyKey, type Data, type FieldSpec, type HabitSpec } from "@/lib/spec";
 import { Chip } from "./ui";
+import { WhySelector } from "./why-selector";
 
 type Value = string | number | string[] | undefined;
-type Props = { field: FieldSpec; data: Data; onChange: (key: string, value: Value) => void };
+type Props = {
+  field: FieldSpec;
+  data: Data;
+  spec: HabitSpec;
+  onChange: (key: string, value: Value) => void;
+  onWhy: (key: string, tags: string[]) => void;
+};
 
-export function FieldView({ field, data, onChange }: Props) {
+export function FieldView({ field, data, spec, onChange, onWhy }: Props) {
   const open = fieldVisible(field, data);
   return (
     <div className="fold" data-open={open} inert={!open}>
       <div>
         <div className="pt-4">
           <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
-          <Body field={field} data={data} onChange={onChange} />
+          <Body field={field} data={data} spec={spec} onChange={onChange} onWhy={onWhy} />
         </div>
       </div>
     </div>
   );
 }
 
-function Body({ field, data, onChange }: Props) {
+function Body({ field, data, spec, onChange, onWhy }: Props) {
   const v = data[field.key];
 
   if (field.kind === "single") {
+    // don't ask twice: if the spec already has a dedicated follow-up for this exact answer
+    // (e.g. "What stopped you?" only when Gym = Skipped), the generic prompt stays out of the way
+    const dedicated = typeof v === "string" && hasDedicatedFollowUp(spec, field.key, v);
+    const bad = !dedicated && toneOfValue(field, v) === "bad";
+    const tags = (data[whyKey(field.key)] as string[] | undefined) ?? [];
     return (
-      <div className="flex flex-wrap gap-2">
-        {field.options.map((o) => (
-          <Chip
-            key={o.id}
-            on={v === o.id}
-            tone={o.tone}
-            onClick={() => onChange(field.key, v === o.id ? undefined : o.id)}
-          >
-            {o.label}
-          </Chip>
-        ))}
+      <div>
+        <div className="flex flex-wrap gap-2">
+          {field.options.map((o) => (
+            <Chip
+              key={o.id}
+              on={v === o.id}
+              tone={o.tone}
+              onClick={() => onChange(field.key, v === o.id ? undefined : o.id)}
+            >
+              {o.label}
+            </Chip>
+          ))}
+        </div>
+        <WhySelector tags={tags} open={bad} onChange={(next) => onWhy(field.key, next)} small />
       </div>
     );
   }

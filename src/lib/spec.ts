@@ -205,6 +205,27 @@ function hasValue(v: Data[string] | undefined) {
   return Array.isArray(v) ? v.length > 0 : true; // a stored 0 (e.g. "No spend") is still an answer
 }
 
+// "Why did this slip" reasons for a single-choice field live right alongside its own answer,
+// under a companion key — no new column, same generic `data` blob everything else uses.
+export const whyKey = (fieldKey: string) => `${fieldKey}_why`;
+
+/** The tone of whatever a "single" field is currently set to, if any. */
+export function toneOfValue(field: FieldSpec, value: Data[string] | undefined): Tone | undefined {
+  if (field.kind !== "single" || typeof value !== "string") return undefined;
+  return field.options.find((o) => o.id === value)?.tone;
+}
+
+/**
+ * True when some other field in the spec is already a dedicated follow-up for this exact
+ * answer (e.g. "What stopped you?" only appears when Gym = Skipped) — in which case the
+ * generic "why did this slip" prompt should stay out of the way instead of asking twice.
+ */
+export function hasDedicatedFollowUp(spec: HabitSpec, fieldKey: string, value: string): boolean {
+  return spec.sections
+    .flatMap((s) => s.fields)
+    .some((f) => f.showIf && "equals" in f.showIf && f.showIf.field === fieldKey && f.showIf.equals === value);
+}
+
 export const sectionDone = (entry: Entry, section: SectionSpec) =>
   section.fields.some((f) => hasValue(entry.data[f.key]));
 
@@ -240,6 +261,12 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
   const out: Data = {};
   for (const f of allFields(spec)) {
     if (fieldVisible(f, out) && data[f.key] !== undefined) out[f.key] = data[f.key];
+  }
+  // "why did this slip" tags only make sense while they still explain the current answer:
+  // the field is visible and its value is still the bad-toned one they were explaining.
+  for (const f of allFields(spec)) {
+    const wk = whyKey(f.key);
+    if (toneOfValue(f, out[f.key]) === "bad" && data[wk] !== undefined) out[wk] = data[wk];
   }
   return out;
 }
