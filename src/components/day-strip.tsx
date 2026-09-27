@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { dayProgress, TOTAL_SECTIONS } from "@/lib/habits";
+import { dayProgress, totalSections, type HabitSpec } from "@/lib/spec";
 import { addDays, weekdayIndex, WEEKDAYS, type Entries } from "@/lib/tracker";
 
 const DAYS = 21;
@@ -10,13 +10,16 @@ export function DayStrip({
   entries,
   today,
   selected,
+  spec,
   onSelect,
 }: {
   entries: Entries;
   today: string;
   selected: string;
+  spec: HabitSpec;
   onSelect: (d: string) => void;
 }) {
+  const total = totalSections(spec);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     box.current?.scrollTo({ left: box.current.scrollWidth });
@@ -28,7 +31,7 @@ export function DayStrip({
     <div ref={box} className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 py-1">
       {days.map((d) => {
         const on = d === selected;
-        const n = dayProgress(entries[d], d);
+        const n = dayProgress(entries[d], d, spec);
         return (
           <button
             key={d}
@@ -48,7 +51,7 @@ export function DayStrip({
             <span className="text-base font-semibold tabular-nums">{Number(d.slice(8))}</span>
             <span
               className={`size-1.5 rounded-full transition-colors ${
-                n >= TOTAL_SECTIONS ? "bg-good" : n > 0 ? (on ? "bg-cream/70" : "bg-ink/40") : "bg-transparent"
+                n >= total ? "bg-good" : n > 0 ? (on ? "bg-cream/70" : "bg-ink/40") : "bg-transparent"
               }`}
             />
           </button>

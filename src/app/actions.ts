@@ -2,7 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { getDb } from "@/lib/db";
-import { sanitize, type Data } from "@/lib/habits";
+import { sanitizeData, sanitizeSpec, type Data, type HabitSpec } from "@/lib/spec";
 import {
   DATE_RE,
   FOCUS_MAX,
@@ -61,7 +61,7 @@ export async function setMood(date: string, mood: Mood | null): Promise<Result> 
   );
 }
 
-/** Replaces the day's tracked answers (sleep, work, gym, water, skin, spend...) as a whole. */
+/** Replaces the day's tracked answers (whatever the user's own spec asks for) as a whole. */
 export async function saveData(date: string, data: Data): Promise<Result> {
   if (!validDate(date)) return { ok: false };
   return run(async (userId) =>
@@ -71,7 +71,7 @@ export async function saveData(date: string, data: Data): Promise<Result> {
         {
           user_id: userId,
           entry_date: date,
-          data: sanitize(data),
+          data: sanitizeData(data),
           updated_at: new Date().toISOString(),
         },
         { onConflict: "user_id,entry_date" },
@@ -106,6 +106,16 @@ export async function saveNote(date: string, note: string): Promise<Result> {
         },
         { onConflict: "user_id,entry_date" },
       ),
+  );
+}
+
+/** Replaces the user's whole habit spec (what a day tracks) with a validated version of `next`. */
+export async function saveSpec(next: HabitSpec): Promise<Result> {
+  const clean = sanitizeSpec(next);
+  return run(async (userId) =>
+    (await getDb())
+      .from("habit_specs")
+      .upsert({ user_id: userId, spec: clean, updated_at: new Date().toISOString() }, { onConflict: "user_id" }),
   );
 }
 

@@ -2,19 +2,19 @@
 
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import type { Data, Field } from "@/lib/habits";
+import { fieldVisible, type Data, type FieldSpec } from "@/lib/spec";
 import { Chip } from "./ui";
 
 type Value = string | number | string[] | undefined;
-type Props = { field: Field; data: Data; onChange: (key: string, value: Value) => void };
+type Props = { field: FieldSpec; data: Data; onChange: (key: string, value: Value) => void };
 
 export function FieldView({ field, data, onChange }: Props) {
-  const open = !field.when || field.when(data);
+  const open = fieldVisible(field, data);
   return (
     <div className="fold" data-open={open} inert={!open}>
       <div>
         <div className="pt-4">
-          <p className="mb-2 text-xs font-medium text-ink/60">{field.label}</p>
+          <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
           <Body field={field} data={data} onChange={onChange} />
         </div>
       </div>
@@ -78,7 +78,7 @@ function Body({ field, data, onChange }: Props) {
             <span key={n} className="bump inline-block text-4xl font-semibold tabular-nums">
               {n}
             </span>
-            <span className="ml-1 text-sm text-ink/60">/ {field.goal} {field.unit}</span>
+            <span className="ml-1 text-sm text-ink/75">/ {field.goal} {field.unit}</span>
           </div>
           <RoundBtn label="More" onClick={() => onChange(field.key, Math.min(field.max, n + 1))} disabled={n >= field.max}>
             <Plus size={18} />
@@ -130,7 +130,7 @@ function Amount({
   value,
   onChange,
 }: {
-  field: Extract<Field, { kind: "amount" }>;
+  field: Extract<FieldSpec, { kind: "amount" }>;
   value: number | undefined;
   onChange: Props["onChange"];
 }) {
@@ -142,17 +142,19 @@ function Amount({
     setText("");
   }
 
+  const show = (n: number) => `${field.prefix}${n.toLocaleString()}${field.suffix ? ` ${field.suffix}` : ""}`;
+
   return (
     <div>
       <div className="flex items-baseline gap-2">
         <span key={value ?? "none"} className="bump inline-block text-4xl font-semibold tabular-nums">
-          {value === undefined ? "₹ —" : `₹${value.toLocaleString("en-IN")}`}
+          {value === undefined ? "—" : show(value)}
         </span>
         {value !== undefined && (
           <button
             type="button"
             onClick={() => onChange(field.key, undefined)}
-            className="text-xs text-ink/50 underline underline-offset-2 hover:text-ink"
+            className="text-xs text-ink/65 underline underline-offset-2 hover:text-ink"
           >
             reset
           </button>
@@ -160,7 +162,7 @@ function Amount({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <Chip on={value === 0} tone="good" onClick={() => onChange(field.key, value === 0 ? undefined : 0)}>
-          No spend
+          Zero
         </Chip>
         {field.quick.map((q) => (
           <Chip key={q} on={false} onClick={() => onChange(field.key, (value ?? 0) + q)}>
@@ -173,9 +175,9 @@ function Amount({
           onChange={(e) => setText(e.target.value.replace(/[^\d.]/g, ""))}
           onBlur={() => text && commit()}
           onKeyDown={(e) => e.key === "Enter" && commit()}
-          placeholder="Exact ₹"
+          placeholder={`Exact ${field.prefix}${field.suffix}`.trim() || "Exact"}
           aria-label="Exact amount"
-          className="chip w-24 rounded-full px-4 py-2 text-sm outline-none placeholder:text-ink/40 focus:border-ink"
+          className="chip w-24 rounded-full px-4 py-2 text-sm outline-none placeholder:text-ink/55 focus:border-ink"
         />
       </div>
     </div>

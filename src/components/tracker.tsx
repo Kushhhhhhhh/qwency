@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
-import { Activity, ListChecks } from "lucide-react";
-import { saveData, saveFocus, saveNote, saveTags, setMood } from "@/app/actions";
-import { SECTIONS, TOTAL_SECTIONS, completion, effective, sanitize, type Data } from "@/lib/habits";
+import { Activity, ListChecks, Settings2 } from "lucide-react";
+import { saveData, saveFocus, saveNote, saveSpec, saveTags, setMood } from "@/app/actions";
+import { completion, effective, pruneHidden, sectionDone, totalSections, type Data, type HabitSpec } from "@/lib/spec";
 import {
   EMPTY_ENTRY,
   addDays,
@@ -17,7 +17,8 @@ import {
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
 import { Overview } from "./overview";
-import { DayVerdict, SectionCard } from "./section-card";
+import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
+import { Setup } from "./setup";
 import { ProgressRing } from "./ui";
 
 const CHEERS: Record<Mood, string[]> = {
@@ -28,8 +29,8 @@ const CHEERS: Record<Mood, string[]> = {
 
 type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
 
-function streakOf(entries: Entries, today: string) {
-  const logged = (d: string) => completion(entries[d]) > 0;
+function streakOf(entries: Entries, today: string, spec: HabitSpec) {
+  const logged = (d: string) => completion(entries[d], spec) > 0;
   let day = logged(today) ? today : addDays(today, -1);
   let n = 0;
   while (logged(day)) {
@@ -42,16 +43,19 @@ function streakOf(entries: Entries, today: string) {
 export function Tracker({
   initialEntries,
   initialFocus,
+  initialSpec,
 }: {
   initialEntries: Entries;
   initialFocus: Record<string, string>;
+  initialSpec: HabitSpec;
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [focuses, setFocuses] = useState(initialFocus);
+  const [spec, setSpec] = useState(initialSpec);
   // "today" is the browser's calendar day, so it is only known after mount
   const [today, setToday] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [tab, setTab] = useState<"today" | "patterns">("today");
+  const [tab, setTab] = useState<"today" | "patterns" | "setup">("today");
   const [pulse, setPulse] = useState({ date: "", n: 0 });
   const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,23 +104,30 @@ export function Tracker({
   /** Apply a change to the selected day; returns the toast text ("Day complete" beats "Saved"). */
   function change(next: Entry): string {
     const date = selected!;
-    const before = completion(effective(entries[date], date));
-    const after = completion(effective(next, date));
+    const total = totalSections(spec);
+    const before = completion(effective(entries[date], date, spec), spec);
+    const after = completion(effective(next, date, spec), spec);
     setEntries((prev) => ({ ...prev, [date]: next }));
     setPulse((p) => ({ date, n: p.n + 1 }));
-    return after === TOTAL_SECTIONS && before < TOTAL_SECTIONS ? "Day complete. Nice work." : "Saved";
+    return after === total && before < total ? "Day complete. Nice work." : "Saved";
   }
 
   function setField(key: string, value: string | number | string[] | undefined) {
     if (!selected) return;
-    const cur = effective(entries[selected], selected); // saves weekend defaults along with the tap
+    const cur = effective(entries[selected], selected, spec); // saves weekend defaults along with the tap
     const data: Data = { ...cur.data };
     if (value === undefined) delete data[key];
     else data[key] = value;
-    const clean = sanitize(data); // also drops answers that no longer apply (e.g. gym type after "Skipped")
+    const clean = pruneHidden(spec, data); // also drops answers that no longer apply (e.g. gym type after "Skipped")
     haptic(8);
     const text = change({ ...cur, data: clean });
     persist(saveData(selected, clean), text);
+  }
+
+  async function saveSetup(next: HabitSpec): Promise<boolean> {
+    const ok = (await saveSpec(next)).ok;
+    if (ok) setSpec(next);
+    return ok;
   }
 
   function pickMood(mood: Mood) {
@@ -151,21 +162,27 @@ export function Tracker({
     persistQuiet(saveFocus(month, text));
   }
 
-  const entry = selected ? effective(entries[selected], selected) : EMPTY_ENTRY;
-  const done = completion(entry);
+  const entry = selected ? effective(entries[selected], selected, spec) : EMPTY_ENTRY;
+  const done = completion(entry, spec);
 
   return (
     <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-32 pt-6">
       <header className="mb-5 flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {tab === "patterns" ? "Patterns" : selected && selected === today ? "Today" : "Earlier"}
+            {tab === "patterns" ? "Patterns" : tab === "setup" ? "Setup" : selected && selected === today ? "Today" : "Earlier"}
           </h1>
           <p className="truncate text-sm text-ink/60">
-            {tab === "patterns" ? "What your days add up to" : selected ? prettyDate(selected) : " "}
+            {tab === "patterns"
+              ? "What your days add up to"
+              : tab === "setup"
+                ? "Make it yours"
+                : selected
+                  ? prettyDate(selected)
+                  : " "}
           </p>
         </div>
-        {tab === "today" && selected && <ProgressRing value={done} total={TOTAL_SECTIONS} />}
+        {tab === "today" && selected && <ProgressRing value={done} total={totalSections(spec)} />}
         <UserButton
           appearance={{
             elements: {
@@ -179,33 +196,47 @@ export function Tracker({
         <div className="card p-10 text-center text-sm text-ink/60">Loading…</div>
       ) : tab === "today" ? (
         <div className="flex flex-col gap-4">
-          <DayStrip entries={entries} today={today} selected={selected} onSelect={setSelected} />
+          <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={setSelected} />
 
-          {SECTIONS.map((s, i) => (
+          {spec.sections.map((s, i) => (
             <SectionCard
               // remount per day so local state (note text, amount input) resets
               key={`${selected}-${s.id}`}
-              id={s.id}
+              icon={s.icon}
               title={s.title}
               hint={s.hint}
-              done={s.done(entry)}
+              done={sectionDone(entry, s)}
               index={i}
+              variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
             >
-              {s.id === "day" ? (
-                <DayVerdict entry={entry} onMood={pickMood} onTags={pickTags} onNote={pickNote} />
-              ) : (
-                s.fields.map((f) => <FieldView key={f.key} field={f} data={entry.data} onChange={setField} />)
-              )}
+              {s.fields.map((f) => (
+                <FieldView key={f.key} field={f} data={entry.data} onChange={setField} />
+              ))}
             </SectionCard>
           ))}
+
+          <SectionCard
+            // remount per day, same as the sections above — otherwise the note's local text
+            // state sticks from whichever day was open first instead of following `entry`
+            key={`${selected}-day`}
+            icon="sun"
+            title="The day overall"
+            hint="One honest verdict, plus a note if you want"
+            done={entry.mood !== null}
+            index={spec.sections.length}
+            variant={TILE_VARIANTS[spec.sections.length % TILE_VARIANTS.length]}
+          >
+            <DayVerdict entry={entry} onMood={pickMood} onTags={pickTags} onNote={pickNote} />
+          </SectionCard>
         </div>
-      ) : (
+      ) : tab === "patterns" ? (
         <Overview
           entries={entries}
           today={today}
           focus={focuses[today.slice(0, 7)] ?? ""}
-          streak={streakOf(entries, today)}
+          streak={streakOf(entries, today, spec)}
           selected={selected}
+          spec={spec}
           pulse={pulse}
           onPick={(d) => {
             setSelected(d);
@@ -214,6 +245,8 @@ export function Tracker({
           }}
           onFocus={pickFocus}
         />
+      ) : (
+        <Setup spec={spec} onSave={saveSetup} />
       )}
 
       {status.kind !== "idle" && (
@@ -237,6 +270,7 @@ export function Tracker({
           [
             ["today", "Today", ListChecks],
             ["patterns", "Patterns", Activity],
+            ["setup", "Setup", Settings2],
           ] as const
         ).map(([id, label, Icon]) => (
           <button

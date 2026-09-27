@@ -1,45 +1,48 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Briefcase, Check, Droplets, Dumbbell, Frown, Meh, Minus, Moon, Plus, Smile, Sun, Wallet } from "lucide-react";
-import type { SectionId } from "@/lib/habits";
+import { Check, Frown, Meh, Minus, Plus, Smile } from "lucide-react";
+import { iconFor } from "@/lib/icons";
 import { MOODS, NOTE_MAX, WHY_TAGS, type Entry, type Mood } from "@/lib/tracker";
 import { Chip } from "./ui";
 
-const ICONS = { sleep: Moon, work: Briefcase, gym: Dumbbell, skin: Droplets, spend: Wallet, day: Sun };
+export const TILE_VARIANTS = ["lilac", "meh", "good"] as const;
+export type TileVariant = (typeof TILE_VARIANTS)[number];
 
 export function SectionCard({
-  id,
+  icon,
   title,
   hint,
   done,
   index,
+  variant,
   children,
 }: {
-  id: SectionId;
+  icon: string;
   title: string;
   hint: string;
   done: boolean;
   index: number;
+  variant: TileVariant;
   children: ReactNode;
 }) {
-  const Icon = ICONS[id];
+  const Icon = iconFor(icon);
   return (
-    <section className="card rise p-5" style={{ animationDelay: `${index * 45}ms` }}>
+    <section className={`tile tile-${variant} rise p-5`} style={{ animationDelay: `${index * 45}ms` }}>
       <header className="flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-2xl bg-lilac/60">
+        <span className="flex size-10 items-center justify-center rounded-2xl bg-white/55">
           <Icon size={20} strokeWidth={1.8} />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold leading-tight">{title}</h2>
-          <p className="text-xs text-ink/55">{hint}</p>
+          <p className="text-xs text-ink/70">{hint}</p>
         </div>
         <span
           className={`flex size-7 items-center justify-center rounded-full border transition-colors duration-300 ${
-            done ? "border-transparent bg-good" : "border-ink/15"
+            done ? "border-transparent bg-ink" : "border-ink/20 bg-white/30"
           }`}
         >
-          {done && <Check key="c" size={15} strokeWidth={3} className="check-pop text-[#2b2946]" />}
+          {done && <Check key="c" size={15} strokeWidth={3} className="check-pop text-cream" />}
         </span>
       </header>
       <div className="-mt-1">{children}</div>
@@ -122,7 +125,7 @@ export function DayVerdict({
         <div>
           <div className="pt-5">
             <p className="text-sm font-semibold">What got in the way?</p>
-            <p className="mb-1 text-xs text-ink/55">Optional. Tap what fits, it saves itself.</p>
+            <p className="mb-1 text-xs text-ink/70">Optional. Tap what fits, it saves itself.</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {WHY_TAGS.map((t) => {
                 const on = entry.tags.includes(t.id);
@@ -147,7 +150,7 @@ export function DayVerdict({
           type="button"
           onClick={() => setNoteOpen((v) => !v)}
           aria-expanded={noteOpen}
-          className="flex items-center gap-1.5 text-sm font-medium text-ink/70 transition-colors hover:text-ink"
+          className="flex items-center gap-1.5 text-sm font-medium text-ink/80 transition-colors hover:text-ink"
         >
           {noteOpen ? <Minus size={15} /> : <Plus size={15} />}
           {noteOpen ? "Hide note" : note ? "Note for this day" : "Add a note"}
@@ -170,9 +173,9 @@ export function DayVerdict({
                 }}
                 onBlur={() => flush(note)}
                 placeholder="Anything worth remembering about today. Wins, vents, thoughts."
-                className="w-full resize-none rounded-2xl border border-ink/15 bg-white/70 p-3 text-sm outline-none transition-colors placeholder:text-ink/40 focus:border-ink"
+                className="w-full resize-none rounded-2xl border border-ink/20 bg-white/70 p-3 text-sm outline-none transition-colors placeholder:text-ink/55 focus:border-ink"
               />
-              <div className="flex justify-between text-[11px] text-ink/45">
+              <div className="flex justify-between text-[11px] text-ink/65">
                 <span aria-live="polite" className={save === "error" ? "text-bad" : ""}>
                   {save === "saving" ? "Saving…" : save === "saved" ? "Saved" : save === "error" ? "Couldn’t save" : ""}
                 </span>

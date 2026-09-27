@@ -29,8 +29,17 @@ create table if not exists public.month_focus (
   primary key (user_id, month)
 );
 
+-- One personalized spec per user: which sections/questions their day tracks, and their
+-- weekend defaults. Seeded from the app's DEFAULT_SPEC on first visit, then editable in Setup.
+create table if not exists public.habit_specs (
+  user_id    text primary key,
+  spec       jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 alter table public.day_entries enable row level security;
 alter table public.month_focus enable row level security;
+alter table public.habit_specs enable row level security;
 
 -- Each signed-in user can only touch their own rows.
 drop policy if exists "own rows" on public.day_entries;
@@ -41,6 +50,12 @@ create policy "own rows" on public.day_entries
 
 drop policy if exists "own rows" on public.month_focus;
 create policy "own rows" on public.month_focus
+  for all to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id)
+  with check ((select auth.jwt() ->> 'sub') = user_id);
+
+drop policy if exists "own rows" on public.habit_specs;
+create policy "own rows" on public.habit_specs
   for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id)
   with check ((select auth.jwt() ->> 'sub') = user_id);

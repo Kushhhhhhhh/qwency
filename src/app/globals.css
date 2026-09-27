@@ -37,6 +37,18 @@ body {
   backdrop-filter: blur(10px);
 }
 
+/* Flat, fully-colored panels for the Today and Patterns section cards — cycled across the
+   palette for visual rhythm (not tied to good/meh/bad meaning, which stays reserved for
+   actual answers and data, e.g. the mood buttons and the Stats tile values). */
+.tile {
+  border: none;
+  border-radius: 1.75rem;
+  box-shadow: 0 1px 2px rgb(80 78 118 / 0.05), 0 6px 18px -10px rgb(80 78 118 / 0.28);
+}
+.tile-lilac { background: var(--color-lilac); }
+.tile-meh { background: var(--color-meh); }
+.tile-good { background: var(--color-good); }
+
 /* ---- chips ---- */
 /* in the components layer so utilities like bg-ink win over these defaults */
 @layer components {

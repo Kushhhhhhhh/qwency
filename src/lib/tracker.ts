@@ -1,4 +1,4 @@
-import type { Data } from "./habits";
+import type { Data } from "./spec";
 
 export type Mood = "good" | "meh" | "bad";
 

@@ -18,3 +18,15 @@ Stack: Next.js 16 (App Router) · Clerk (auth) · Supabase (Postgres) · Tailwin
 
 Supabase is called from the server with the publishable key plus the user's Clerk token;
 RLS policies restrict every row to its owner.
+
+## What a day tracks is data, not code
+
+`supabase/schema.sql` added a `habit_specs` table: one JSON "spec" per user describing their
+sections and questions (see `src/lib/spec.ts` for the shape, `DEFAULT_SPEC` for the seed —
+currently Kush's own setup). Every new user gets that seed on first visit; from then on it's
+theirs, edited from the **Setup** tab, with no code change and no migration. The overall
+verdict (Good/Okay/Rough), reasons and note stay fixed for every user, so patterns stay
+comparable across a personalized set of trackers.
+
+If you already ran an older `schema.sql`, just run the new one again — it only adds the
+`habit_specs` table and is safe to re-run.
