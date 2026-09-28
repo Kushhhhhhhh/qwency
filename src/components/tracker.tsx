@@ -4,7 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
 import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
 import { saveData, saveFocus, saveNote, saveSpec, saveTags, setMood } from "@/app/actions";
-import { completion, effective, pruneHidden, sectionDone, totalSections, whyKey, type Data, type HabitSpec } from "@/lib/spec";
+import {
+  completion,
+  effective,
+  pruneHidden,
+  sectionDone,
+  totalSections,
+  uniqueSlug,
+  whyKey,
+  type Data,
+  type FieldSpec,
+  type HabitSpec,
+} from "@/lib/spec";
 import {
   EMPTY_ENTRY,
   addDays,
@@ -137,6 +148,32 @@ export function Tracker({
     return ok;
   }
 
+  // "Write your own" on a choice field: adds a real, permanent option to the spec (same as
+  // adding one in Setup) and picks it for the day you're on, so you never need two taps for it.
+  async function addOption(field: FieldSpec, label: string) {
+    if (field.kind !== "single" && field.kind !== "multi") return;
+    const clean = label.slice(0, 30);
+    const used = new Set(field.options.map((o) => o.id));
+    const id = uniqueSlug(clean, used, "option");
+    const nextSpec: HabitSpec = {
+      ...spec,
+      sections: spec.sections.map((s) => ({
+        ...s,
+        fields: s.fields.map((f) =>
+          f.key === field.key && f.kind === field.kind ? { ...f, options: [...f.options, { id, label: clean }] } : f,
+        ),
+      })),
+    };
+    const ok = await saveSetup(nextSpec);
+    if (!ok || !selected) return;
+    if (field.kind === "multi") {
+      const cur = (effective(entries[selected], selected, spec).data[field.key] as string[] | undefined) ?? [];
+      setField(field.key, [...cur, id]);
+    } else {
+      setField(field.key, id);
+    }
+  }
+
   function pickMood(mood: Mood) {
     if (!selected) return;
     const cur = entries[selected] ?? EMPTY_ENTRY;
@@ -227,7 +264,7 @@ export function Tracker({
               variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
             >
               {s.fields.map((f) => (
-                <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} />
+                <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} onAddOption={addOption} />
               ))}
             </SectionCard>
           ))}

@@ -104,12 +104,13 @@ export const DEFAULT_SPEC: HabitSpec = {
           label: "What did you hit?",
           showIf: { field: "gym", equals: "trained" },
           options: [
-            { id: "push", label: "Push" },
-            { id: "pull", label: "Pull" },
-            { id: "legs", label: "Legs" },
+            { id: "chest", label: "Chest" },
+            { id: "shoulders", label: "Shoulders" },
+            { id: "biceps", label: "Biceps" },
+            { id: "triceps", label: "Triceps" },
             { id: "core", label: "Core" },
+            { id: "legs", label: "Legs" },
             { id: "cardio", label: "Cardio" },
-            { id: "other", label: "Other" },
           ],
         },
         {

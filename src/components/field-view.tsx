@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { fieldVisible, hasDedicatedFollowUp, toneOfValue, whyKey, type Data, type FieldSpec, type HabitSpec } from "@/lib/spec";
+import { fieldVisible, hasDedicatedFollowUp, LIMITS, toneOfValue, whyKey, type Data, type FieldSpec, type HabitSpec } from "@/lib/spec";
 import { Chip } from "./ui";
 import { WhySelector } from "./why-selector";
 
@@ -13,23 +13,24 @@ type Props = {
   spec: HabitSpec;
   onChange: (key: string, value: Value) => void;
   onWhy: (key: string, tags: string[]) => void;
+  onAddOption: (field: FieldSpec, label: string) => void;
 };
 
-export function FieldView({ field, data, spec, onChange, onWhy }: Props) {
+export function FieldView({ field, data, spec, onChange, onWhy, onAddOption }: Props) {
   const open = fieldVisible(field, data);
   return (
     <div className="fold" data-open={open} inert={!open}>
       <div>
         <div className="pt-4">
           <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
-          <Body field={field} data={data} spec={spec} onChange={onChange} onWhy={onWhy} />
+          <Body field={field} data={data} spec={spec} onChange={onChange} onWhy={onWhy} onAddOption={onAddOption} />
         </div>
       </div>
     </div>
   );
 }
 
-function Body({ field, data, spec, onChange, onWhy }: Props) {
+function Body({ field, data, spec, onChange, onWhy, onAddOption }: Props) {
   const v = data[field.key];
 
   if (field.kind === "single") {
@@ -51,6 +52,7 @@ function Body({ field, data, spec, onChange, onWhy }: Props) {
               {o.label}
             </Chip>
           ))}
+          <AddOption field={field} onAdd={(label) => onAddOption(field, label)} />
         </div>
         <WhySelector tags={tags} open={bad} onChange={(next) => onWhy(field.key, next)} small />
       </div>
@@ -76,6 +78,7 @@ function Body({ field, data, spec, onChange, onWhy }: Props) {
             </Chip>
           );
         })}
+        <AddOption field={field} onAdd={(label) => onAddOption(field, label)} />
       </div>
     );
   }
@@ -114,6 +117,51 @@ function Body({ field, data, spec, onChange, onWhy }: Props) {
   }
 
   return <Amount field={field} value={typeof v === "number" ? v : undefined} onChange={onChange} />;
+}
+
+/** "Other" with no way to say what it was is a dead end — lets you add a real, permanent
+ * option on the spot. It's saved to your Setup immediately, so it's there to tap next time too. */
+function AddOption({
+  field,
+  onAdd,
+}: {
+  field: Extract<FieldSpec, { kind: "single" | "multi" }>;
+  onAdd: (label: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  if (field.options.length >= LIMITS.options) return null;
+
+  function submit() {
+    const label = text.trim();
+    setText("");
+    setOpen(false);
+    if (label) onAdd(label);
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="chip flex items-center gap-1 rounded-full px-3.5 py-2 text-sm text-ink/60"
+      >
+        <Plus size={14} /> Write your own
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={text}
+      maxLength={30}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && submit()}
+      onBlur={submit}
+      placeholder="Type it, then Enter"
+      className="chip w-36 rounded-full px-4 py-2 text-sm outline-none placeholder:text-ink/45 focus:border-ink"
+    />
+  );
 }
 
 function RoundBtn({
