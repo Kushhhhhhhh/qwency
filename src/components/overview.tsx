@@ -16,12 +16,13 @@ import {
   type Mood,
 } from "@/lib/tracker";
 
-const WEEKS = 17;
+const WEEKS = 10;
 const MOOD_VAR: Record<Mood, string> = {
   good: "var(--color-good)",
   meh: "var(--color-meh)",
   bad: "var(--color-bad)",
 };
+const TILE_TONE_TEXT: Record<string, string> = { good: "text-good", meh: "text-meh", bad: "text-bad" };
 
 type Props = {
   entries: Entries;
@@ -39,7 +40,7 @@ export function Overview(p: Props) {
   return (
     <div className="flex flex-col gap-4">
       <MonthCard {...p} />
-      <Contributions {...p} />
+      <Heatmap {...p} />
       <WeeklyReview entries={p.entries} today={p.today} spec={p.spec} />
       <Stats entries={p.entries} today={p.today} spec={p.spec} />
       <Reasons entries={p.entries} spec={p.spec} />
@@ -119,9 +120,12 @@ function MonthCard({ entries, today, focus, streak, spec, onFocus }: Props) {
   );
 }
 
-/* ------------------------------ weekly = awareness ------------------------------ */
+/* ------------------------------ heatmap ------------------------------ */
+// The old grid was a wash of similar-hued cells on a lilac tile — you couldn't see the
+// filled days against the empty ones. Now the grid sits on its own white inner surface,
+// cells are bigger, and the empty-day color is a light cream that actually contrasts.
 
-function Contributions({ entries, today, selected, spec, pulse, onPick }: Props) {
+function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
   const [mode, setMode] = useState<"progress" | "mood">("progress");
   const total = totalSections(spec);
   const thisMonday = addDays(today, -weekdayIndex(today));
@@ -137,11 +141,11 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
     const n = dayProgress(e, d, spec);
     if (mode === "mood") {
       if (e?.mood) return MOOD_VAR[e.mood];
-      if (n > 0) return "color-mix(in oklab, var(--color-ink) 18%, transparent)";
+      if (n > 0) return "color-mix(in oklab, var(--color-ink) 22%, transparent)";
     } else if (n > 0) {
-      return `color-mix(in oklab, var(--color-ink) ${20 + (n / total) * 80}%, transparent)`;
+      return `color-mix(in oklab, var(--color-ink) ${25 + (n / total) * 75}%, transparent)`;
     }
-    return "color-mix(in oklab, var(--color-ink) 7%, transparent)";
+    return "color-mix(in oklab, var(--color-ink) 6%, transparent)";
   }
 
   return (
@@ -154,7 +158,7 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
             <span className="text-ink/75"> / {weekMax} things logged</span>
           </p>
         </div>
-        <div className="flex rounded-full border border-ink/10 bg-white/60 p-0.5 text-xs font-medium">
+        <div className="flex rounded-full border border-ink/10 bg-white/70 p-0.5 text-xs font-medium">
           {(["progress", "mood"] as const).map((m) => (
             <button
               key={m}
@@ -170,66 +174,64 @@ function Contributions({ entries, today, selected, spec, pulse, onPick }: Props)
         </div>
       </div>
 
-      <div className="no-scrollbar mt-4 flex gap-2 overflow-x-auto pb-1 pr-2">
-        <div className="flex shrink-0 flex-col gap-[3px] text-[9px] leading-none text-ink/65">
-          {WEEKDAYS.map((d, i) => (
-            <span key={d} className="flex h-[13px] items-center">
-              {i % 2 === 0 ? d : ""}
-            </span>
-          ))}
+      {/* white inner surface — the grid needs contrast against the card, not sameness with it */}
+      <div className="mt-4 rounded-2xl bg-white/70 p-4">
+        <div className="flex gap-3">
+          <div className="flex shrink-0 flex-col gap-[5px] pt-[3px] text-[10px] leading-none text-ink/55">
+            {WEEKDAYS.map((d, i) => (
+              <span key={d} className="flex h-[17px] items-center">
+                {i % 2 === 0 ? d : ""}
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-1 justify-center gap-[5px]">
+            {Array.from({ length: WEEKS }, (_, week) => (
+              <div key={week} className="flex flex-col gap-[5px]">
+                {Array.from({ length: 7 }, (_, day) => {
+                  const i = week * 7 + day;
+                  const d = days[i];
+                  const popped = pulse.date === d;
+                  const future = d > today;
+                  const isSel = d === selected;
+                  return (
+                    <button
+                      key={popped ? `${d}-${pulse.n}` : d}
+                      type="button"
+                      disabled={future}
+                      onClick={() => onPick(d)}
+                      aria-label={`${shortDate(d)}: ${dayProgress(entries[d], d, spec)} of ${total} logged`}
+                      title={future ? "" : `${shortDate(d)} · ${dayProgress(entries[d], d, spec)}/${total} logged`}
+                      style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
+                      className={`size-[17px] shrink-0 rounded-[5px] transition-transform ${future ? "invisible" : "hover:scale-110"} ${
+                        popped ? "cell-in" : "rise"
+                      } ${isSel ? "ring-2 ring-ink" : ""}`}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
-        {/* fixed pixel cells, not aspect-ratio/fr-based — that let the browser size the last,
-            partly-empty week's column differently from the rest and it visually blew up */}
-        <div className="flex gap-[3px]">
-          {Array.from({ length: WEEKS }, (_, week) => (
-            <div key={week} className="flex flex-col gap-[3px]">
-              {Array.from({ length: 7 }, (_, day) => {
-                const i = week * 7 + day;
-                const d = days[i];
-                const popped = pulse.date === d;
-                const future = d > today;
-                return (
-                  <button
-                    key={popped ? `${d}-${pulse.n}` : d}
-                    type="button"
-                    disabled={future}
-                    onClick={() => onPick(d)}
-                    aria-label={`${shortDate(d)}: ${dayProgress(entries[d], d, spec)} of ${total} logged`}
-                    title={future ? "" : `${shortDate(d)} · ${dayProgress(entries[d], d, spec)}/${total} logged`}
-                    style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
-                    className={`size-[13px] shrink-0 rounded-[3px] ${future ? "invisible" : ""} ${
-                      popped ? "cell-in" : "rise"
-                    } ${d === selected ? "ring-2 ring-ink" : ""}`}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
 
-      <div className="mt-3 flex items-center justify-between text-[11px] text-ink/70">
-        <span>Tap a day to open it.</span>
-        <span className="flex items-center gap-1">
-          {mode === "progress" ? "less" : "rough"}
-          {(mode === "progress"
-            ? [0.07, 0.3, 0.5, 0.75, 1].map((o) => `color-mix(in oklab, var(--color-ink) ${o * 100}%, transparent)`)
-            : [MOOD_VAR.bad, MOOD_VAR.meh, MOOD_VAR.good]
-          ).map((c) => (
-            <i key={c} className="inline-block size-3 rounded-[3px]" style={{ background: c }} />
-          ))}
-          {mode === "progress" ? "more" : "good"}
-        </span>
+        <div className="mt-3 flex items-center justify-between text-[11px] text-ink/60">
+          <span>Tap a day to open it.</span>
+          <span className="flex items-center gap-1">
+            {mode === "progress" ? "less" : "rough"}
+            {(mode === "progress"
+              ? [0.06, 0.3, 0.55, 0.8, 1].map((o) => `color-mix(in oklab, var(--color-ink) ${o * 100}%, transparent)`)
+              : [MOOD_VAR.bad, MOOD_VAR.meh, MOOD_VAR.good]
+            ).map((c) => (
+              <i key={c} className="inline-block size-3 rounded-[3px]" style={{ background: c }} />
+            ))}
+            {mode === "progress" ? "more" : "good"}
+          </span>
+        </div>
       </div>
     </section>
   );
 }
 
 /* ------------------------------ this week's patterns ------------------------------ */
-// A "miss" is a bad-toned answer on any field this user's own spec defines, or the day
-// verdict itself. This card only speaks up when something repeated (2+ times) and, when
-// there's a real reason behind it, says so — see lib/weekly.ts for exactly what it will
-// and won't claim.
 
 function WeeklyReview({ entries, today, spec }: { entries: Entries; today: string; spec: HabitSpec }) {
   const { insights, reasons } = weeklyReview(spec, entries, today);
@@ -244,7 +246,7 @@ function WeeklyReview({ entries, today, spec }: { entries: Entries; today: strin
         <ul className="mt-3 space-y-2.5">
           {insights.map((i) => (
             <li key={i.key} className="flex gap-2.5 text-sm leading-snug">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-ink/50" />
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-ink/60" />
               <span>{i.text}</span>
             </li>
           ))}
@@ -262,7 +264,7 @@ function WeeklyReview({ entries, today, spec }: { entries: Entries; today: strin
                 <span className="w-24 shrink-0">{r.label}</span>
                 <span
                   className="h-2 rounded-full bg-white/70 transition-[width] duration-500"
-                  style={{ width: `${(r.n / reasons[0].n) * 50}%`, minWidth: 8 }}
+                  style={{ width: `${(r.n / reasons[0].n) * 55}%`, minWidth: 10 }}
                 />
                 <span className="font-semibold tabular-nums">{r.n}</span>
               </li>
@@ -274,11 +276,7 @@ function WeeklyReview({ entries, today, spec }: { entries: Entries; today: strin
   );
 }
 
-/* ------------------------------ what the data says so far ------------------------------ */
-// Derived straight from *this user's own* spec (whatever sections and fields they've set up),
-// never hardcoded to any one person's trackers — see lib/insights.ts.
-
-const TILE_TONE_TEXT: Record<string, string> = { good: "text-good", meh: "text-meh", bad: "text-bad" };
+/* ------------------------------ your numbers so far ------------------------------ */
 
 function Stats({ entries, today, spec }: { entries: Entries; today: string; spec: HabitSpec }) {
   const tiles = statTiles(spec, entries, today);
@@ -287,16 +285,13 @@ function Stats({ entries, today, spec }: { entries: Entries; today: string; spec
   return (
     <section>
       <p className="px-1 text-xs font-medium uppercase tracking-wider text-ink/50">Your numbers so far</p>
-      <p className="mb-2 px-1 text-xs text-ink/50">
-        One tile per question from your own Setup, calculated from the last 30 days.
-      </p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <p className="mb-2 px-1 text-xs text-ink/50">One per question, calculated from the last 30 days.</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {tiles.map((t) => (
-          <div key={t.key} className="card px-4 py-3">
-            <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-ink/40">{t.section}</p>
-            <p className={`mt-0.5 text-xl font-semibold tabular-nums ${t.tone ? TILE_TONE_TEXT[t.tone] : ""}`}>{t.value}</p>
-            <p className="truncate text-xs font-medium">{t.question}</p>
-            <p className="text-[11px] text-ink/50">{t.context}</p>
+          <div key={t.key} className="card p-4">
+            <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-ink/45">{t.section}</p>
+            <p className={`mt-0.5 text-xl font-semibold ${t.tone ? TILE_TONE_TEXT[t.tone] : ""}`}>{t.value}</p>
+            <p className="mt-0.5 text-[13px] leading-snug text-ink/70">{t.context}</p>
           </div>
         ))}
       </div>
@@ -304,12 +299,10 @@ function Stats({ entries, today, spec }: { entries: Entries; today: string; spec
   );
 }
 
-/* ------------------------------ reasons = truth ------------------------------ */
+/* ------------------------------ reasons = truth (all-time) ------------------------------ */
 
 function Reasons({ entries, spec }: { entries: Entries; spec: HabitSpec }) {
   const bad = Object.entries(entries).filter(([, e]) => e.mood === "bad");
-  // every reason logged anywhere — the day verdict, or any bad-toned field answer — not
-  // just day-mood reasons, so this stays in sync with the weekly card above.
   const counts = reasonTally(spec, entries);
   const max = counts[0]?.n ?? 1;
   const untagged = bad.filter(([, e]) => e.tags.length === 0).length;
@@ -318,29 +311,25 @@ function Reasons({ entries, spec }: { entries: Entries; spec: HabitSpec }) {
   const worst = Math.max(...perWeekday);
   const worstDay = worst >= 2 ? WEEKDAYS[perWeekday.indexOf(worst)] : null;
 
+  if (counts.length === 0) return null;
+
   return (
     <section className="tile tile-lilac p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/70">Reasons · truth</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-ink/70">All time</p>
       <h2 className="mt-1 text-base font-semibold">Why things go rough</h2>
 
-      {counts.length === 0 ? (
-        <p className="mt-2 text-sm text-ink/75">
-          Nothing yet. Mark a day as rough, or tap "why" on a bad-toned answer, and the pattern shows up here.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-2.5">
-          {counts.map((t) => (
-            <li key={t.id} className="flex items-center gap-3 text-sm">
-              <span className="w-28 shrink-0">{t.label}</span>
-              <span
-                className="h-2.5 rounded-full bg-white/70 transition-[width] duration-500"
-                style={{ width: `${(t.n / max) * 55}%`, minWidth: 10 }}
-              />
-              <span className="font-semibold tabular-nums">{t.n}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className="mt-3 space-y-2.5">
+        {counts.map((t) => (
+          <li key={t.id} className="flex items-center gap-3 text-sm">
+            <span className="w-28 shrink-0">{t.label}</span>
+            <span
+              className="h-2.5 rounded-full bg-white/70 transition-[width] duration-500"
+              style={{ width: `${(t.n / max) * 55}%`, minWidth: 10 }}
+            />
+            <span className="font-semibold tabular-nums">{t.n}</span>
+          </li>
+        ))}
+      </ul>
 
       {(worstDay || untagged > 0) && (
         <p className="mt-4 text-xs text-ink/75">

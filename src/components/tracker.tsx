@@ -9,6 +9,8 @@ import {
   effective,
   pruneHidden,
   sectionDone,
+  sectionNoteKey,
+  SECTION_NOTE_MAX,
   totalSections,
   uniqueSlug,
   whyKey,
@@ -28,6 +30,7 @@ import {
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
 import { Journal } from "./journal";
+import { NoteField } from "./note-field";
 import { Overview } from "./overview";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
 import { Setup } from "./setup";
@@ -140,6 +143,20 @@ export function Tracker({
   // this is just another field-level save, reusing setField's optimistic update + persist.
   function pickWhy(fieldKey: string, tags: string[]) {
     setField(whyKey(fieldKey), tags.length ? tags : undefined);
+  }
+
+  // Per-section freeform note — same storage trick as the reasons: a companion key on the
+  // day's `data` blob. Quiet save (no toast) since notes are typed, not tapped.
+  async function saveSectionNote(sectionId: string, text: string): Promise<boolean> {
+    if (!selected) return false;
+    const cur = effective(entries[selected], selected, spec);
+    const data: Data = { ...cur.data };
+    const key = sectionNoteKey(sectionId);
+    if (text.trim().length === 0) delete data[key];
+    else data[key] = text;
+    const clean = pruneHidden(spec, data);
+    setEntries((prev) => ({ ...prev, [selected]: { ...cur, data: clean } }));
+    return persistQuiet(saveData(selected, clean));
   }
 
   async function saveSetup(next: HabitSpec): Promise<boolean> {
@@ -266,6 +283,15 @@ export function Tracker({
               {s.fields.map((f) => (
                 <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} onAddOption={addOption} />
               ))}
+              <NoteField
+                value={(entry.data[sectionNoteKey(s.id)] as string) ?? ""}
+                max={SECTION_NOTE_MAX}
+                onSave={(v) => saveSectionNote(s.id, v)}
+                placeholder={`Anything worth remembering about ${s.title.toLowerCase()}.`}
+                openLabel="Note"
+                closeLabel="Hide note"
+                filledLabel="Note"
+              />
             </SectionCard>
           ))}
 
@@ -302,6 +328,7 @@ export function Tracker({
       ) : tab === "journal" ? (
         <Journal
           entries={entries}
+          spec={spec}
           onPick={(d) => {
             setSelected(d);
             setTab("today");

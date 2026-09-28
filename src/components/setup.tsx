@@ -82,10 +82,8 @@ export function Setup({ spec, onSave }: { spec: HabitSpec; onSave: (next: HabitS
         <p className="text-xs font-medium uppercase tracking-wider text-ink/50">Setup</p>
         <h2 className="mt-1 text-base font-semibold">What you track each day</h2>
         <p className="mt-1 text-sm text-ink/60">
-          Add, remove or edit the questions below. The overall verdict at the end of every day stays fixed for
-          everyone, so patterns can be compared. Nothing here touches days you've already logged. Changes save when
-          you tap Save, so you can try things out — the button follows you down the page once you've changed
-          something.
+          Change what your day tracks. The overall verdict stays fixed for everyone so patterns
+          stay comparable. Old days aren't touched.
         </p>
         <div className="mt-4">
           <button

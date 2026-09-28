@@ -2,84 +2,109 @@ import { addDays } from "./tracker";
 import type { Entries, Entry } from "./tracker";
 import type { FieldSpec, HabitSpec, Tone } from "./spec";
 
-// Turns whatever fields a *particular* user's spec happens to define into a handful of
-// "Your numbers" tiles — no hardcoded field names. Two people with completely different
-// setups (or the same person after editing theirs) both get tiles that make sense for them,
-// derived the same mechanical way from each field's kind. Every tile carries which section
-// it came from and a plain-English line saying what was actually calculated, so the number
-// is never a mystery.
+// Per-question stat tiles, one per section (fair rotation so a newly added section isn't
+// crowded out). Every tile has three pieces: which section it came from, the headline value
+// itself, and — instead of a bare percentage — a plain-English sentence saying what that
+// value actually is. "Skipped · 50%" reads like a chart; "Skipped, about half the days you
+// logged" reads like something you already knew but hadn't said out loud.
 
-export type Tile = { key: string; section: string; question: string; value: string; tone?: Tone; context: string };
+export type Tile = { key: string; section: string; value: string; tone?: Tone; context: string };
 
 const WINDOW_DAYS = 30;
 const MAX_TILES = 9;
-const NOT_LOGGED = `not logged in the last ${WINDOW_DAYS} days`;
+const NOT_LOGGED = `Not logged in the last ${WINDOW_DAYS} days.`;
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
+/**
+ * A frequency phrase for k occurrences out of n logged days. Deliberately not clinical:
+ * "about half the days" beats "50%" for the same reason a friend telling you something
+ * beats a spreadsheet cell.
+ */
+function frequency(k: number, n: number): string {
+  if (n === 0) return "";
+  if (n === 1) return "on the one day you logged";
+  if (k === n) return `every one of the ${n} days you logged`;
+  if (k === 1) return `on 1 of the ${n} days you logged`;
+  const pct = k / n;
+  if (pct >= 0.85) return `almost every day (${k} of ${n})`;
+  if (pct >= 0.65) return `most days you logged (${k} of ${n})`;
+  if (pct >= 0.55) return `more than half the days (${k} of ${n})`;
+  if (pct >= 0.45) return `about half the days (${k} of ${n})`;
+  if (pct >= 0.3) return `about a third of the days (${k} of ${n})`;
+  return `on ${k} of the ${n} days you logged`;
+}
+
 function tileFor(field: FieldSpec, sectionTitle: string, entries: Entry[]): Tile {
-  const base = { key: field.key, section: sectionTitle, question: field.label };
+  const base = { key: field.key, section: sectionTitle };
 
-  if (field.kind === "single" || field.kind === "multi") {
-    if (field.kind === "single") {
-      const values = entries.map((e) => e.data[field.key]).filter((v): v is string => typeof v === "string");
-      if (values.length === 0) return { ...base, value: "—", context: NOT_LOGGED };
+  if (field.kind === "single") {
+    const values = entries.map((e) => e.data[field.key]).filter((v): v is string => typeof v === "string");
+    if (values.length === 0) return { ...base, value: "—", context: NOT_LOGGED };
 
-      // Always "what did you pick most", whether or not the options carry a tone — consistent
-      // across every choice field, rather than a separate "% good" framing that's confusing
-      // when the most common answer isn't a good one (e.g. "0% good" reads like an error).
-      const counts = new Map<string, number>();
-      for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-      const [topId, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-      const top = field.options.find((o) => o.id === topId);
-      const pct = Math.round((n / values.length) * 100);
-      return {
-        ...base,
-        value: `${top?.label ?? topId} · ${pct}%`,
-        tone: top?.tone,
-        context: `most picked answer, ${values.length} day${values.length === 1 ? "" : "s"} logged`,
-      };
-    }
-
-    const counts = entries
-      .map((e) => e.data[field.key])
-      .filter((v): v is string[] => Array.isArray(v))
-      .map((v) => v.length);
-    if (counts.length === 0) return { ...base, value: "—", context: NOT_LOGGED };
+    const counts = new Map<string, number>();
+    for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+    const [topId, n] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const top = field.options.find((o) => o.id === topId);
     return {
       ...base,
-      value: mean(counts).toFixed(1),
-      context: `avg picked per day, ${counts.length} day${counts.length === 1 ? "" : "s"} logged`,
+      value: top?.label ?? topId,
+      tone: top?.tone,
+      context: `${capitalize(frequency(n, values.length))}.`,
+    };
+  }
+
+  if (field.kind === "multi") {
+    // "average items per day" was a weak stat — the *most-picked item* is what a person can
+    // actually recognize about themselves. Falls back to a count if that top item isn't clear.
+    const perOption = new Map<string, number>();
+    let daysWithAny = 0;
+    for (const e of entries) {
+      const v = e.data[field.key];
+      if (!Array.isArray(v) || v.length === 0) continue;
+      daysWithAny++;
+      for (const id of new Set(v as string[])) perOption.set(id, (perOption.get(id) ?? 0) + 1);
+    }
+    if (daysWithAny === 0) return { ...base, value: "—", context: NOT_LOGGED };
+    const [topId, n] = [...perOption.entries()].sort((a, b) => b[1] - a[1])[0];
+    const top = field.options.find((o) => o.id === topId);
+    return {
+      ...base,
+      value: top?.label ?? topId,
+      context: `Your most-picked, ${frequency(n, daysWithAny)}.`,
     };
   }
 
   if (field.kind === "counter") {
     const values = entries.map((e) => e.data[field.key]).filter((v): v is number => typeof v === "number");
     if (values.length === 0) return { ...base, value: "—", context: NOT_LOGGED };
+    const avg = mean(values);
+    const goalHits = values.filter((v) => v >= field.goal).length;
     return {
       ...base,
-      value: `${mean(values).toFixed(1)} ${field.unit}`,
-      context: `average per day, ${values.length} day${values.length === 1 ? "" : "s"} logged`,
+      value: `${avg.toFixed(1)} ${field.unit}`,
+      context: `Averaged per day, hit your goal of ${field.goal} ${frequency(goalHits, values.length)}.`,
     };
   }
 
-  // amount — a sum, not "today's" value, even though the question itself asks about one day
+  // amount
   const values = entries.map((e) => e.data[field.key]).filter((v): v is number => typeof v === "number");
   if (values.length === 0) return { ...base, value: "—", context: NOT_LOGGED };
   const total = values.reduce((a, b) => a + b, 0);
+  const nonZero = values.filter((v) => v > 0).length;
   return {
     ...base,
     value: `${field.prefix}${total.toLocaleString()}${field.suffix ? ` ${field.suffix}` : ""}`,
-    context: `total added up, last ${WINDOW_DAYS} days`,
+    context: `Total across ${nonZero} ${nonZero === 1 ? "day" : "days"} in the last ${WINDOW_DAYS}.`,
   };
 }
 
+const capitalize = (s: string) => (s.length ? s[0].toUpperCase() + s.slice(1) : s);
+
 /**
- * Which fields get a tile, when there isn't room for all of them: one field per *section*
- * first — so a new section (Meals, say) always earns a tile before an older section (Gym)
- * gets a second one — then a second field per section if there's still room, and so on.
- * Plain "first N fields in spec order" would let whichever sections were defined first
- * (yours, since you're the default seed) permanently crowd out anything added later.
+ * One field per *section* first (so a new section always earns a tile before an older
+ * section gets a second one), then a second field per section if there's room. Prevents
+ * whichever sections were defined earliest from permanently crowding out newer ones.
  */
 function pickFields(spec: HabitSpec): { field: FieldSpec; sectionTitle: string }[] {
   const bySection = spec.sections.map((s) => ({ title: s.title, fields: s.fields }));

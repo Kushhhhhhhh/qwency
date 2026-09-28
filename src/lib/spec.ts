@@ -210,6 +210,12 @@ function hasValue(v: Data[string] | undefined) {
 // under a companion key — no new column, same generic `data` blob everything else uses.
 export const whyKey = (fieldKey: string) => `${fieldKey}_why`;
 
+// Per-section freeform note ("add anything for this section, no matter what happened").
+// Same storage trick as the reason tags: a companion key in the `data` blob, keyed by
+// the section's id. Server sanitizer treats any *_note key as free text up to SECTION_NOTE_MAX.
+export const sectionNoteKey = (sectionId: string) => `${sectionId}_note`;
+export const SECTION_NOTE_MAX = 500;
+
 /** The tone of whatever a "single" field is currently set to, if any. */
 export function toneOfValue(field: FieldSpec, value: Data[string] | undefined): Tone | undefined {
   if (field.kind !== "single" || typeof value !== "string") return undefined;
@@ -269,6 +275,12 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
     const wk = whyKey(f.key);
     if (toneOfValue(f, out[f.key]) === "bad" && data[wk] !== undefined) out[wk] = data[wk];
   }
+  // Section notes travel with the section: kept for any section still in the spec, dropped
+  // when a whole section is removed in Setup (which is the same rule field answers follow).
+  for (const s of spec.sections) {
+    const k = sectionNoteKey(s.id);
+    if (typeof data[k] === "string" && (data[k] as string).length > 0) out[k] = data[k];
+  }
   return out;
 }
 
@@ -289,7 +301,10 @@ export function sanitizeData(input: unknown): Data {
     if (count >= 40 || !KEY_RE.test(key)) continue;
     const v = src[key];
     if (typeof v === "string") {
-      if (v.length <= 60) out[key] = v;
+      // any *_note key is free text (bumped from 60 to SECTION_NOTE_MAX); other strings
+      // are option ids and stay short.
+      const cap = key.endsWith("_note") ? SECTION_NOTE_MAX : 60;
+      if (v.length <= cap) out[key] = v;
     } else if (typeof v === "number") {
       if (Number.isFinite(v)) out[key] = Math.min(1_000_000, Math.max(0, Math.round(v * 100) / 100));
     } else if (Array.isArray(v)) {
