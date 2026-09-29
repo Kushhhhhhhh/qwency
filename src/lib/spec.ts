@@ -1,5 +1,5 @@
 import { ICON_IDS, DEFAULT_ICON } from "./icons";
-import { EMPTY_ENTRY, weekdayIndex, type Entry } from "./tracker";
+import { DATE_RE, WEEKDAYS, weekdayIndex, type Entries, type Entry } from "./tracker";
 
 // What a single day tracks (sleep, work, gym, water, spending, ...) is *your* choice, stored
 // as one spec per user, edited with the screen in components/setup.tsx. This file defines the
@@ -25,9 +25,44 @@ export type FieldSpec =
   | (Base & { kind: "counter"; max: number; goal: number; unit: string })
   | (Base & { kind: "amount"; quick: number[]; prefix: string; suffix: string });
 
-export type SectionSpec = { id: string; title: string; hint: string; icon: string; fields: FieldSpec[] };
+export type SectionSpec = {
+  id: string;
+  title: string;
+  hint: string;
+  icon: string;
+  /** Weekdays this section is *expected* on (0 = Mon … 6 = Sun). Everything about "missed" hangs off this. */
+  days: number[];
+  /** Date the section was added (YYYY-MM-DD). Days before it are never counted as gaps. Absent on older sections. */
+  since?: string;
+  fields: FieldSpec[];
+};
 
-export type HabitSpec = { sections: SectionSpec[]; weekendDefaults: Data };
+export type HabitSpec = { sections: SectionSpec[] };
+
+// ---- schedules: when a section is expected ----
+
+export const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+export const WEEKDAYS_ONLY = [0, 1, 2, 3, 4];
+export const WEEKENDS_ONLY = [5, 6];
+
+export type SchedulePreset = "every" | "weekdays" | "weekends" | "custom";
+
+const sameDays = (a: number[], b: number[]) => a.length === b.length && a.every((d, i) => d === b[i]);
+
+export function schedulePreset(days: number[]): SchedulePreset {
+  if (sameDays(days, EVERY_DAY)) return "every";
+  if (sameDays(days, WEEKDAYS_ONLY)) return "weekdays";
+  if (sameDays(days, WEEKENDS_ONLY)) return "weekends";
+  return "custom";
+}
+
+export function scheduleLabel(days: number[]): string {
+  const p = schedulePreset(days);
+  if (p === "every") return "Every day";
+  if (p === "weekdays") return "Weekdays";
+  if (p === "weekends") return "Weekends";
+  return days.map((d) => WEEKDAYS[d]).join(", ");
+}
 
 // ---- your own setup, and what every new account is seeded with ----
 
@@ -38,6 +73,7 @@ export const DEFAULT_SPEC: HabitSpec = {
       title: "Sleep",
       hint: "Last night",
       icon: "moon",
+      days: EVERY_DAY,
       fields: [
         {
           kind: "single",
@@ -58,6 +94,7 @@ export const DEFAULT_SPEC: HabitSpec = {
       title: "Work",
       hint: "Office & focus",
       icon: "briefcase",
+      days: WEEKDAYS_ONLY,
       fields: [
         {
           kind: "single",
@@ -87,6 +124,7 @@ export const DEFAULT_SPEC: HabitSpec = {
       title: "Gym",
       hint: "Training",
       icon: "dumbbell",
+      days: WEEKDAYS_ONLY,
       fields: [
         {
           kind: "single",
@@ -134,6 +172,7 @@ export const DEFAULT_SPEC: HabitSpec = {
       title: "Skin & water",
       hint: "Hydration and routine",
       icon: "droplets",
+      days: EVERY_DAY,
       fields: [
         { kind: "counter", key: "water", label: "Water", max: 12, goal: 8, unit: "glasses" },
         {
@@ -155,6 +194,7 @@ export const DEFAULT_SPEC: HabitSpec = {
       title: "Spending",
       hint: "What left your wallet",
       icon: "wallet",
+      days: EVERY_DAY,
       fields: [
         { kind: "amount", key: "spend", label: "Spent today", quick: [50, 100, 250, 500], prefix: "₹", suffix: "" },
         {
@@ -185,9 +225,6 @@ export const DEFAULT_SPEC: HabitSpec = {
       ],
     },
   ],
-  // Saturday and Sunday start pre-filled for these two; tap something else if a weekend
-  // day is different. Edit or clear this in Setup.
-  weekendDefaults: { work_mode: "off", gym: "rest" },
 };
 
 // ---- evaluating a spec against a day's data ----
@@ -216,6 +253,11 @@ export const whyKey = (fieldKey: string) => `${fieldKey}_why`;
 export const sectionNoteKey = (sectionId: string) => `${sectionId}_note`;
 export const SECTION_NOTE_MAX = 500;
 
+// Why a *scheduled section had nothing logged* (WHY_TAGS ids). Separate from `whyKey`, which
+// explains a bad-toned answer — this explains a blank. Cleared automatically once the
+// section gets an answer, since it no longer describes anything.
+export const sectionMissKey = (sectionId: string) => `${sectionId}_missed`;
+
 /** The tone of whatever a "single" field is currently set to, if any. */
 export function toneOfValue(field: FieldSpec, value: Data[string] | undefined): Tone | undefined {
   if (field.kind !== "single" || typeof value !== "string") return undefined;
@@ -236,25 +278,41 @@ export function hasDedicatedFollowUp(spec: HabitSpec, fieldKey: string, value: s
 export const sectionDone = (entry: Entry, section: SectionSpec) =>
   section.fields.some((f) => hasValue(entry.data[f.key]));
 
-/** The entry as the UI should see it: weekend defaults filled in for anything not answered yet. */
-export function effective(entry: Entry | undefined, date: string, spec: HabitSpec): Entry {
-  const base = entry ?? EMPTY_ENTRY;
-  if (weekdayIndex(date) < 5 || Object.keys(spec.weekendDefaults).length === 0) return base;
-  return { ...base, data: { ...spec.weekendDefaults, ...base.data } };
+// ---- what's expected on a given day ----
+
+export const isScheduled = (section: SectionSpec, date: string) => section.days.includes(weekdayIndex(date));
+export const scheduledSections = (spec: HabitSpec, date: string) => spec.sections.filter((s) => isScheduled(s, date));
+
+/** Anything answered on any section (scheduled or not), or a day verdict. */
+export function hasActivity(entry: Entry | undefined, spec: HabitSpec): boolean {
+  if (!entry) return false;
+  return entry.mood !== null || spec.sections.some((s) => sectionDone(entry, s));
 }
 
-/** "The day overall" is a fixed section every spec gets, on top of the custom ones. */
-export const totalSections = (spec: HabitSpec) => spec.sections.length + 1;
+/**
+ * The earliest day you logged anything (a note counts). Days before it aren't gaps — you
+ * hadn't started yet, and calling them misses would make the first week look like failure.
+ */
+export function startedOn(entries: Entries, spec: HabitSpec): string | null {
+  let first: string | null = null;
+  for (const [date, e] of Object.entries(entries)) {
+    if (!hasActivity(e, spec) && e.note.trim().length === 0) continue;
+    if (first === null || date < first) first = date;
+  }
+  return first;
+}
 
-export function completion(entry: Entry | undefined, spec: HabitSpec): number {
+/** Was this section actually expected on this day? Scheduled, after you started, after it existed. */
+export const isExpected = (section: SectionSpec, date: string, started: string) =>
+  isScheduled(section, date) && date >= started && (!section.since || date >= section.since);
+
+/** Progress is measured against the plan: scheduled sections + "the day overall", which is always on. */
+export const dayTotal = (spec: HabitSpec, date: string) => scheduledSections(spec, date).length + 1;
+
+export function dayDone(entry: Entry | undefined, date: string, spec: HabitSpec): number {
   if (!entry) return 0;
-  const custom = spec.sections.filter((s) => sectionDone(entry, s)).length;
+  const custom = scheduledSections(spec, date).filter((s) => sectionDone(entry, s)).length;
   return custom + (entry.mood !== null ? 1 : 0);
-}
-
-/** Progress for grids and strips: a day you never touched stays empty, even on a weekend. */
-export function dayProgress(entry: Entry | undefined, date: string, spec: HabitSpec) {
-  return completion(entry, spec) > 0 ? completion(effective(entry, date, spec), spec) : 0;
 }
 
 const allFields = (spec: HabitSpec) => spec.sections.flatMap((s) => s.fields);
@@ -281,12 +339,21 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
     const k = sectionNoteKey(s.id);
     if (typeof data[k] === "string" && (data[k] as string).length > 0) out[k] = data[k];
   }
+  // A "why was this blank" reason only stands while the section is still blank.
+  for (const s of spec.sections) {
+    const mk = sectionMissKey(s.id);
+    const answered = s.fields.some((f) => hasValue(out[f.key]));
+    if (!answered && data[mk] !== undefined) out[mk] = data[mk];
+  }
   return out;
 }
 
 // ---- sanitizing untrusted input ----
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,30}$/;
+// Stored keys are a field key or section id plus a companion suffix (_why, _note, _missed),
+// so they're allowed to run longer than the ids they're built from.
+const DATA_KEY_RE = /^[a-z][a-z0-9_]{0,44}$/;
 
 /**
  * Generic, spec-independent bounds check for a day's answers. Deliberately doesn't need to
@@ -298,7 +365,7 @@ export function sanitizeData(input: unknown): Data {
   const out: Data = {};
   let count = 0;
   for (const key of Object.keys(src)) {
-    if (count >= 40 || !KEY_RE.test(key)) continue;
+    if (count >= 60 || !DATA_KEY_RE.test(key)) continue;
     const v = src[key];
     if (typeof v === "string") {
       // any *_note key is free text (bumped from 60 to SECTION_NOTE_MAX); other strings
@@ -452,18 +519,23 @@ export function sanitizeSpec(input: unknown): HabitSpec {
       if (field) fields.push(field);
     }
     if (fields.length === 0) continue; // a section with nothing to tap isn't worth keeping
-    sections.push({ id, title, hint, icon, fields });
+
+    // Schedule. Specs saved before schedules existed had `weekendDefaults` instead — a section
+    // whose answers were pre-filled on weekends was, in effect, a weekdays-only section, so
+    // carry that intent over rather than suddenly expecting Gym and Work on Saturdays.
+    const legacy = src.weekendDefaults && typeof src.weekendDefaults === "object" ? (src.weekendDefaults as Record<string, unknown>) : {};
+    const hadWeekendDefault = fields.some((f) => f.key in legacy);
+    const days = sanitizeDays(s.days) ?? (hadWeekendDefault ? WEEKDAYS_ONLY : EVERY_DAY);
+    const since = typeof s.since === "string" && DATE_RE.test(s.since) ? s.since : undefined;
+
+    sections.push({ id, title, hint, icon, days, ...(since ? { since } : {}), fields });
   }
 
-  const weekendDefaults: Data = {};
-  const rawDefaults = src.weekendDefaults;
-  if (rawDefaults && typeof rawDefaults === "object") {
-    for (const f of sections.flatMap((s) => s.fields)) {
-      if (f.kind !== "single") continue;
-      const v = (rawDefaults as Record<string, unknown>)[f.key];
-      if (typeof v === "string" && f.options.some((o) => o.id === v)) weekendDefaults[f.key] = v;
-    }
-  }
+  return { sections: sections.length ? sections : DEFAULT_SPEC.sections };
+}
 
-  return { sections: sections.length ? sections : DEFAULT_SPEC.sections, weekendDefaults };
+function sanitizeDays(input: unknown): number[] | null {
+  if (!Array.isArray(input)) return null;
+  const days = [...new Set(input.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b);
+  return days.length ? days : null;
 }

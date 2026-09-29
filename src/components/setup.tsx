@@ -4,7 +4,12 @@ import { useState } from "react";
 import { ChevronDown, Plus, RotateCcw, Trash2 } from "lucide-react";
 import {
   DEFAULT_SPEC,
+  EVERY_DAY,
   LIMITS,
+  WEEKDAYS_ONLY,
+  WEEKENDS_ONLY,
+  scheduleLabel,
+  schedulePreset,
   uniqueSlug,
   type FieldSpec,
   type HabitSpec,
@@ -12,6 +17,7 @@ import {
   type SectionSpec,
   type Tone,
 } from "@/lib/spec";
+import { WEEKDAYS, localKey } from "@/lib/tracker";
 import { ICON_IDS, iconFor } from "@/lib/icons";
 import { Chip } from "./ui";
 
@@ -72,7 +78,17 @@ export function Setup({ spec, onSave }: { spec: HabitSpec; onSave: (next: HabitS
         { id: "no", label: "No" },
       ],
     };
-    setDraft((d) => ({ ...d, sections: [...d.sections, { id, title: "New section", hint: "", icon: "circle", fields: [field] }] }));
+    // `since` keeps the days before this section existed from ever counting as gaps
+    const section: SectionSpec = {
+      id,
+      title: "New section",
+      hint: "",
+      icon: "circle",
+      days: EVERY_DAY,
+      since: localKey(new Date()),
+      fields: [field],
+    };
+    setDraft((d) => ({ ...d, sections: [...d.sections, section] }));
     setOpen((o) => new Set(o).add(id));
   }
 
@@ -123,8 +139,6 @@ export function Setup({ spec, onSave }: { spec: HabitSpec; onSave: (next: HabitS
         <p className="text-center text-xs text-ink/45">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
       )}
 
-      <WeekendDefaults spec={draft} onChange={(weekendDefaults) => setDraft((d) => ({ ...d, weekendDefaults }))} />
-
       {/* follows you down the page once there's something to save — no scrolling back up,
           and it just quietly disappears on a successful save instead of popping a toast */}
       {(dirty || save === "saving" || save === "error") && (
@@ -148,46 +162,6 @@ export function Setup({ spec, onSave }: { spec: HabitSpec; onSave: (next: HabitS
         </div>
       )}
     </div>
-  );
-}
-
-function WeekendDefaults({ spec, onChange }: { spec: HabitSpec; onChange: (d: HabitSpec["weekendDefaults"]) => void }) {
-  // only top-level (no showIf) single-choice fields make sense to default on their own
-  const eligible = spec.sections
-    .flatMap((s) => s.fields)
-    .filter((f): f is Extract<FieldSpec, { kind: "single" }> => f.kind === "single" && !f.showIf);
-  if (eligible.length === 0) return null;
-
-  return (
-    <section className="card p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/50">Weekends</p>
-      <h2 className="mt-1 text-base font-semibold">Saturday & Sunday defaults</h2>
-      <p className="mt-1 text-sm text-ink/60">Pre-fill an answer for weekends. You can still tap something else on the day.</p>
-      <div className="mt-3 space-y-2">
-        {eligible.map((f) => (
-          <div key={f.key} className="flex items-center justify-between gap-3 text-sm">
-            <span>{f.label}</span>
-            <select
-              value={(spec.weekendDefaults[f.key] as string | undefined) ?? ""}
-              onChange={(e) => {
-                const next = { ...spec.weekendDefaults };
-                if (e.target.value) next[f.key] = e.target.value;
-                else delete next[f.key];
-                onChange(next);
-              }}
-              className={`${select} w-40 rounded-full py-1.5`}
-            >
-              <option value="">No default</option>
-              {f.options.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }
 
@@ -253,7 +227,7 @@ function SectionEditor({
           <h2 className="truncate text-base font-semibold leading-tight">{section.title || "Untitled"}</h2>
           <p className="truncate text-xs text-ink/55">
             {section.hint ? `${section.hint} · ` : ""}
-            {section.fields.length} question{section.fields.length === 1 ? "" : "s"}
+            {section.fields.length} question{section.fields.length === 1 ? "" : "s"} · {scheduleLabel(section.days)}
           </p>
         </div>
         <ChevronDown size={18} className={`shrink-0 text-ink/50 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
@@ -281,6 +255,8 @@ function SectionEditor({
                 />
               </div>
             </div>
+
+            <ScheduleEditor days={section.days} onChange={(days) => onChange({ days })} />
 
             <div className="mt-4 flex flex-col gap-4">
               {section.fields.map((field, fi) => (
@@ -320,6 +296,70 @@ function SectionEditor({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * "When do you track this?" — the plan the Patterns page measures against. Days a section
+ * isn't planned are never counted as missed. Custom is just a view over the same list of
+ * days, so switching to it doesn't change anything until you toggle a day.
+ */
+function ScheduleEditor({ days, onChange }: { days: number[]; onChange: (days: number[]) => void }) {
+  const preset = schedulePreset(days);
+  const [customOpen, setCustomOpen] = useState(preset === "custom");
+  const showDays = customOpen || preset === "custom";
+  const presets: [string, string, number[]][] = [
+    ["every", "Every day", EVERY_DAY],
+    ["weekdays", "Weekdays", WEEKDAYS_ONLY],
+    ["weekends", "Weekends", WEEKENDS_ONLY],
+  ];
+
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-xs font-medium text-ink/60">When do you track this?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map(([id, label, value]) => (
+          <Chip
+            key={id}
+            small
+            on={preset === id && !showDays}
+            onClick={() => {
+              setCustomOpen(false);
+              onChange(value);
+            }}
+          >
+            {label}
+          </Chip>
+        ))}
+        <Chip small on={showDays} onClick={() => setCustomOpen(true)}>
+          Custom
+        </Chip>
+      </div>
+
+      {showDays && (
+        <div className="mt-2 flex gap-1.5">
+          {WEEKDAYS.map((d, i) => {
+            const on = days.includes(i);
+            return (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={on}
+                aria-label={d}
+                onClick={() => {
+                  const next = on ? days.filter((x) => x !== i) : [...days, i].sort((a, b) => a - b);
+                  if (next.length > 0) onChange(next); // a section planned on no days would never be expected
+                }}
+                className={`chip h-9 min-w-0 flex-1 rounded-full text-[11px] font-medium ${on ? "bg-ink text-cream" : "text-ink"}`}
+              >
+                {d}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-ink/55">Days it isn't planned won't count as missed.</p>
+    </div>
   );
 }
 

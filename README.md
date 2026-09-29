@@ -30,3 +30,15 @@ comparable across a personalized set of trackers.
 
 If you already ran an older `schema.sql`, just run the new one again — it only adds the
 `habit_specs` table and is safe to re-run.
+
+## Schedules: what "missed" means
+
+Each section has `days` (0 = Mon … 6 = Sun): when it's *expected*. Everything on the Patterns
+page is measured against that plan (`src/lib/mirror.ts`): **Reality** (done), **Gap** (a
+bad-toned answer, or nothing logged on a planned day) and **Reason** (reason chips, the answer
+to a dedicated follow-up like "What stopped you?", or a note). A day only counts if it's
+scheduled, on or after your first logged day, on or after the section's `since` date, and not
+today (today's unanswered sections are "open").
+
+Specs saved before schedules existed had `weekendDefaults`; `sanitizeSpec` reads them once and
+turns any section that had a weekend default into weekdays-only.

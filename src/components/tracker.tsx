@@ -5,13 +5,17 @@ import { UserButton } from "@clerk/nextjs";
 import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
 import { saveData, saveFocus, saveNote, saveSpec, saveTags, setMood } from "@/app/actions";
 import {
-  completion,
-  effective,
+  dayDone,
+  dayTotal,
+  hasActivity,
+  isExpected,
+  isScheduled,
   pruneHidden,
   sectionDone,
+  sectionMissKey,
   sectionNoteKey,
   SECTION_NOTE_MAX,
-  totalSections,
+  startedOn,
   uniqueSlug,
   whyKey,
   type Data,
@@ -30,6 +34,7 @@ import {
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
 import { Journal } from "./journal";
+import { MissedNudge } from "./missed-nudge";
 import { NoteField } from "./note-field";
 import { Overview } from "./overview";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
@@ -45,7 +50,7 @@ const CHEERS: Record<Mood, string[]> = {
 type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
 
 function streakOf(entries: Entries, today: string, spec: HabitSpec) {
-  const logged = (d: string) => completion(entries[d], spec) > 0;
+  const logged = (d: string) => hasActivity(entries[d], spec);
   let day = logged(today) ? today : addDays(today, -1);
   let n = 0;
   while (logged(day)) {
@@ -74,6 +79,12 @@ export function Tracker({
   const [pulse, setPulse] = useState({ date: "", n: 0 });
   const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Debounced note saves fire later than the render that created them, so they read the
+  // latest entries from here rather than from a stale closure.
+  const entriesRef = useRef(entries);
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
 
   useEffect(() => {
     const t = localKey(new Date());
@@ -119,9 +130,9 @@ export function Tracker({
   /** Apply a change to the selected day; returns the toast text ("Day complete" beats "Saved"). */
   function change(next: Entry): string {
     const date = selected!;
-    const total = totalSections(spec);
-    const before = completion(effective(entries[date], date, spec), spec);
-    const after = completion(effective(next, date, spec), spec);
+    const total = dayTotal(spec, date);
+    const before = dayDone(entries[date], date, spec);
+    const after = dayDone(next, date, spec);
     setEntries((prev) => ({ ...prev, [date]: next }));
     setPulse((p) => ({ date, n: p.n + 1 }));
     return after === total && before < total ? "Day complete. Nice work." : "Saved";
@@ -129,7 +140,7 @@ export function Tracker({
 
   function setField(key: string, value: string | number | string[] | undefined) {
     if (!selected) return;
-    const cur = effective(entries[selected], selected, spec); // saves weekend defaults along with the tap
+    const cur = entries[selected] ?? EMPTY_ENTRY;
     const data: Data = { ...cur.data };
     if (value === undefined) delete data[key];
     else data[key] = value;
@@ -147,16 +158,15 @@ export function Tracker({
 
   // Per-section freeform note — same storage trick as the reasons: a companion key on the
   // day's `data` blob. Quiet save (no toast) since notes are typed, not tapped.
-  async function saveSectionNote(sectionId: string, text: string): Promise<boolean> {
-    if (!selected) return false;
-    const cur = effective(entries[selected], selected, spec);
+  async function saveSectionNote(date: string, sectionId: string, text: string): Promise<boolean> {
+    const cur = entriesRef.current[date] ?? EMPTY_ENTRY;
     const data: Data = { ...cur.data };
     const key = sectionNoteKey(sectionId);
     if (text.trim().length === 0) delete data[key];
     else data[key] = text;
     const clean = pruneHidden(spec, data);
-    setEntries((prev) => ({ ...prev, [selected]: { ...cur, data: clean } }));
-    return persistQuiet(saveData(selected, clean));
+    setEntries((prev) => ({ ...prev, [date]: { ...(prev[date] ?? EMPTY_ENTRY), data: clean } }));
+    return persistQuiet(saveData(date, clean));
   }
 
   async function saveSetup(next: HabitSpec): Promise<boolean> {
@@ -184,7 +194,7 @@ export function Tracker({
     const ok = await saveSetup(nextSpec);
     if (!ok || !selected) return;
     if (field.kind === "multi") {
-      const cur = (effective(entries[selected], selected, spec).data[field.key] as string[] | undefined) ?? [];
+      const cur = ((entries[selected] ?? EMPTY_ENTRY).data[field.key] as string[] | undefined) ?? [];
       setField(field.key, [...cur, id]);
     } else {
       setField(field.key, id);
@@ -223,8 +233,8 @@ export function Tracker({
     persistQuiet(saveFocus(month, text));
   }
 
-  const entry = selected ? effective(entries[selected], selected, spec) : EMPTY_ENTRY;
-  const done = completion(entry, spec);
+  const entry = selected ? (entries[selected] ?? EMPTY_ENTRY) : EMPTY_ENTRY;
+  const started = today ? (startedOn(entries, spec) ?? today) : "";
 
   return (
     <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-32 pt-6">
@@ -253,7 +263,9 @@ export function Tracker({
                     : " "}
           </p>
         </div>
-        {tab === "today" && selected && <ProgressRing value={done} total={totalSections(spec)} />}
+        {tab === "today" && selected && (
+          <ProgressRing value={dayDone(entry, selected, spec)} total={dayTotal(spec, selected)} />
+        )}
         <UserButton
           appearance={{
             elements: {
@@ -269,31 +281,45 @@ export function Tracker({
         <div className="flex flex-col gap-4">
           <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={setSelected} />
 
-          {spec.sections.map((s, i) => (
-            <SectionCard
-              // remount per day so local state (note text, amount input) resets
-              key={`${selected}-${s.id}`}
-              icon={s.icon}
-              title={s.title}
-              hint={s.hint}
-              done={sectionDone(entry, s)}
-              index={i}
-              variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
-            >
-              {s.fields.map((f) => (
-                <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} onAddOption={addOption} />
-              ))}
-              <NoteField
-                value={(entry.data[sectionNoteKey(s.id)] as string) ?? ""}
-                max={SECTION_NOTE_MAX}
-                onSave={(v) => saveSectionNote(s.id, v)}
-                placeholder={`Anything worth remembering about ${s.title.toLowerCase()}.`}
-                openLabel="Note"
-                closeLabel="Hide note"
-                filledLabel="Note"
-              />
-            </SectionCard>
-          ))}
+          {spec.sections.map((s, i) => {
+            const scheduled = isScheduled(s, selected);
+            const answered = sectionDone(entry, s);
+            // a past day, planned, and nothing logged: worth a quiet "want to say why?" — never today,
+            // since the day isn't over, and never before you started or before the section existed
+            const missed = !answered && selected < today && isExpected(s, selected, started);
+            const missTags = (entry.data[sectionMissKey(s.id)] as string[] | undefined) ?? [];
+            return (
+              <SectionCard
+                // remount per day so local state (note text, amount input) resets
+                key={`${selected}-${s.id}`}
+                icon={s.icon}
+                title={s.title}
+                hint={scheduled ? s.hint : "Not planned today · log it if you did it"}
+                done={answered}
+                muted={!scheduled && !answered}
+                index={i}
+                variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
+              >
+                {s.fields.map((f) => (
+                  <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} onAddOption={addOption} />
+                ))}
+                {missed && (
+                  <MissedNudge tags={missTags} onChange={(tags) => setField(sectionMissKey(s.id), tags.length ? tags : undefined)} />
+                )}
+                <NoteField
+                  value={(entry.data[sectionNoteKey(s.id)] as string) ?? ""}
+                  max={SECTION_NOTE_MAX}
+                  onSave={(v) => saveSectionNote(selected, s.id, v)}
+                  placeholder={
+                    missed ? "What happened? Just for you." : `Anything worth remembering about ${s.title.toLowerCase()}.`
+                  }
+                  openLabel="Note"
+                  closeLabel="Hide note"
+                  filledLabel="Note"
+                />
+              </SectionCard>
+            );
+          })}
 
           <SectionCard
             // remount per day, same as the sections above — otherwise the note's local text
