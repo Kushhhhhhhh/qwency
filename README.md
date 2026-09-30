@@ -42,3 +42,28 @@ today (today's unanswered sections are "open").
 
 Specs saved before schedules existed had `weekendDefaults`; `sanitizeSpec` reads them once and
 turns any section that had a weekend default into weekdays-only.
+
+## Targets: what counts as a slip
+
+A gap on Patterns is only as meaningful as the line it's measured against, and every question
+can have one (`isSlip` in `src/lib/spec.ts`, the single rule Today, Patterns and the reason
+prompt all share):
+
+- **Choice** questions: any option you mark orange ("bad") in Setup. For a scale like sleep
+  hours, "good from ▾" sets the whole line in one tap.
+- **Counter**: its goal is a floor. Falling short is a slip *once the day is over*; 3/8 glasses at
+  noon is on its way, so today shows "still open".
+- **Number**: optional "Up to" / "At least". A limit is broken the moment it's crossed.
+
+A section where nothing can slip says so on Patterns ("Set a target") and in Setup ("no target
+yet"), since only missed days can show up there. "Why did this slip?" asks at most once per
+section. Targets live in the same per-user spec JSON: no new table, nothing to migrate.
+
+## Splitting a number across your picks
+
+A multi-choice that only shows once a number is above zero (Spending's "On what?" after "Spent
+today") is that number's breakdown (`breakdownOf` in `src/lib/spec.ts`). Nothing to switch on, so
+it applies to every saved spec that already has the pattern. Each pick you choose gets an optional
+amount box ("Split it up"), stored as a plain number under `fieldKey__optionId` in the same day
+blob. Today says how much of the total is unsplit; Patterns adds "Where it went" for the window.
+An amount is dropped when its pick is unticked or the total goes back to zero.

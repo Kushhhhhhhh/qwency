@@ -1,14 +1,19 @@
 import { addDays, WHY_TAGS, type Entries, type Entry } from "./tracker";
 import {
+  breakdownOf,
+  formatAmount,
   isExpected,
+  isSlip,
   scheduleLabel,
   sectionDone,
   sectionMissKey,
   sectionNoteKey,
+  slipRules,
+  splitKey,
   startedOn,
-  toneOfValue,
   whyKey,
   EVERY_DAY,
+  type Data,
   type FieldSpec,
   type HabitSpec,
   type SectionSpec,
@@ -18,7 +23,8 @@ import {
 // three plain questions and reports the answers without adjectives:
 //
 //   Reality  what actually happened            (done)
-//   Gap      what was planned but didn't       (slipped = you logged a bad-toned answer,
+//   Gap      what was planned but didn't       (slipped = an answer on the wrong side of the line
+//                                                          you drew: a bad option, a limit, a floor;
 //                                               blank   = nothing logged)
 //   Reason   why, in your own words or taps    (reason tags, follow-up answers, notes)
 //
@@ -35,6 +41,10 @@ export type RowMirror = {
   title: string;
   icon: string;
   schedule: string;
+  /** what counts as a slip here, in words; empty means nothing in this section can slip */
+  rules: string[];
+  /** where a number went, from the optional per-pick amounts ("Food ₹450"), biggest first */
+  where: { label: string; amount: string }[];
   cells: Cell[];
   planned: number;
   done: number;
@@ -63,12 +73,13 @@ const optionLabel = (f: FieldSpec, id: string) =>
   f.kind === "single" || f.kind === "multi" ? (f.options.find((o) => o.id === id)?.label ?? id) : id;
 
 /**
- * Reasons behind a bad-toned answer: the reason chips tapped for it, plus the answer to any
- * dedicated follow-up ("What stopped you?" only appears when Gym = Skipped), so a reason you
- * already gave once is never reported as missing.
+ * Reasons behind a slip: the reason chips tapped for it, plus the answer to any dedicated
+ * follow-up ("What stopped you?" only appears when Gym = Skipped), so a reason you already
+ * gave once is never reported as missing.
  */
-function reasonsForSlip(spec: HabitSpec, entry: Entry, field: FieldSpec, value: string): string[] {
+function reasonsForSlip(spec: HabitSpec, entry: Entry, field: FieldSpec, value: Data[string]): string[] {
   const out: string[] = strings(entry.data[whyKey(field.key)]).map(whyLabel);
+  if (typeof value !== "string") return out; // a number has no follow-up option to read
   for (const g of spec.sections.flatMap((s) => s.fields)) {
     if (!g.showIf || !("equals" in g.showIf) || g.showIf.field !== field.key || g.showIf.equals !== value) continue;
     const a = entry.data[g.key];
@@ -100,16 +111,20 @@ function sectionCell(spec: HabitSpec, s: SectionSpec, date: string, entry: Entry
     return { date, state: "blank", reasons: dedupe(strings(entry?.data[sectionMissKey(s.id)]).map(whyLabel)), note };
   }
 
+  const dayOver = date < today;
   const reasons: string[] = [];
   let slipped = false;
+  let pending = false;
   for (const f of s.fields) {
     const v = entry.data[f.key];
-    if (typeof v === "string" && toneOfValue(f, v) === "bad") {
+    if (isSlip(f, v, dayOver)) {
       slipped = true;
       reasons.push(...reasonsForSlip(spec, entry, f, v));
+    } else if (!dayOver && isSlip(f, v, true)) {
+      pending = true; // a floor not reached yet, with the day still running
     }
   }
-  return { date, state: slipped ? "slipped" : "done", reasons: dedupe(reasons), note };
+  return { date, state: slipped ? "slipped" : pending ? "open" : "done", reasons: dedupe(reasons), note };
 }
 
 /** "The day overall" is expected every day: Good/Okay are reality, Rough is a slip, empty is a blank. */
@@ -121,7 +136,38 @@ function dayCell(date: string, entry: Entry | undefined, today: string, started:
   return { date, state: "done", reasons: [], note };
 }
 
-function summarize(id: string, title: string, icon: string, schedule: string, cells: Cell[]): RowMirror {
+/** Adds up the optional per-pick amounts over the window. Empty when nobody split anything. */
+function whereItWent(spec: HabitSpec, s: SectionSpec, dates: string[], entries: Entries): RowMirror["where"] {
+  const tally = new Map<string, { label: string; total: number; format: (n: number) => string }>();
+  for (const f of s.fields) {
+    const parent = breakdownOf(spec, f);
+    if (!parent || f.kind !== "multi") continue;
+    for (const d of dates) {
+      const data = entries[d]?.data;
+      if (!data) continue;
+      for (const o of f.options) {
+        const v = data[splitKey(f.key, o.id)];
+        if (typeof v !== "number" || v <= 0) continue;
+        const k = `${f.key}:${o.id}`;
+        tally.set(k, { label: o.label, total: (tally.get(k)?.total ?? 0) + v, format: (n) => formatAmount(parent, n) });
+      }
+    }
+  }
+  return [...tally.values()]
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5)
+    .map((t) => ({ label: t.label, amount: t.format(Math.round(t.total * 100) / 100) }));
+}
+
+function summarize(
+  id: string,
+  title: string,
+  icon: string,
+  schedule: string,
+  rules: string[],
+  where: RowMirror["where"],
+  cells: Cell[],
+): RowMirror {
   const count = (st: CellState) => cells.filter((c) => c.state === st).length;
   const done = count("done");
   const slipped = count("slipped");
@@ -142,6 +188,8 @@ function summarize(id: string, title: string, icon: string, schedule: string, ce
     title,
     icon,
     schedule,
+    rules,
+    where,
     cells,
     planned: done + slipped + blank,
     done,
@@ -165,9 +213,19 @@ export function buildMirror(spec: HabitSpec, entries: Entries, today: string, wi
   const dates = Array.from({ length: windowDays }, (_, i) => addDays(today, -(windowDays - 1 - i)));
 
   const rows: RowMirror[] = spec.sections.map((s) =>
-    summarize(s.id, s.title, s.icon, scheduleLabel(s.days), dates.map((d) => sectionCell(spec, s, d, entries[d], today, from))),
+    summarize(
+      s.id,
+      s.title,
+      s.icon,
+      scheduleLabel(s.days),
+      slipRules(s),
+      whereItWent(spec, s, dates, entries),
+      dates.map((d) => sectionCell(spec, s, d, entries[d], today, from)),
+    ),
   );
-  rows.push(summarize("__day", "The day overall", "sun", scheduleLabel(EVERY_DAY), dates.map((d) => dayCell(d, entries[d], today, from))));
+  rows.push(
+    summarize("__day", "The day overall", "sun", scheduleLabel(EVERY_DAY), ["Rough"], [], dates.map((d) => dayCell(d, entries[d], today, from))),
+  );
 
   // gaps first — that's what the page is for — otherwise keep the order you set up
   const order = new Map(rows.map((r, i) => [r.id, i]));

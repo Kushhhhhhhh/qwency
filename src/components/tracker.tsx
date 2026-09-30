@@ -5,6 +5,7 @@ import { UserButton } from "@clerk/nextjs";
 import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
 import { saveData, saveFocus, saveNote, saveSpec, saveTags, setMood } from "@/app/actions";
 import {
+  breakdownOf,
   dayDone,
   dayTotal,
   hasActivity,
@@ -18,6 +19,7 @@ import {
   startedOn,
   uniqueSlug,
   whyKey,
+  whyPromptKey,
   type Data,
   type FieldSpec,
   type HabitSpec,
@@ -76,6 +78,8 @@ export function Tracker({
   const [today, setToday] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<"today" | "patterns" | "journal" | "setup">("today");
+  // a Patterns row can send you to its section in Setup, already open
+  const [setupFocus, setSetupFocus] = useState<string | null>(null);
   const [pulse, setPulse] = useState({ date: "", n: 0 });
   const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -288,6 +292,8 @@ export function Tracker({
             // since the day isn't over, and never before you started or before the section existed
             const missed = !answered && selected < today && isExpected(s, selected, started);
             const missTags = (entry.data[sectionMissKey(s.id)] as string[] | undefined) ?? [];
+            // one "why did this slip?" per section, and never for a floor the day hasn't had time to reach
+            const askKey = whyPromptKey(spec, s, entry.data, selected < today);
             return (
               <SectionCard
                 // remount per day so local state (note text, amount input) resets
@@ -301,7 +307,16 @@ export function Tracker({
                 variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
               >
                 {s.fields.map((f) => (
-                  <FieldView key={f.key} field={f} data={entry.data} spec={spec} onChange={setField} onWhy={pickWhy} onAddOption={addOption} />
+                  <FieldView
+                    key={f.key}
+                    field={f}
+                    data={entry.data}
+                    askWhy={askKey === f.key}
+                    split={breakdownOf(spec, f)}
+                    onChange={setField}
+                    onWhy={pickWhy}
+                    onAddOption={addOption}
+                  />
                 ))}
                 {missed && (
                   <MissedNudge tags={missTags} onChange={(tags) => setField(sectionMissKey(s.id), tags.length ? tags : undefined)} />
@@ -350,6 +365,11 @@ export function Tracker({
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
           onFocus={pickFocus}
+          onSetup={(sectionId) => {
+            setSetupFocus(sectionId);
+            setTab("setup");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
         />
       ) : tab === "journal" ? (
         <Journal
@@ -362,7 +382,7 @@ export function Tracker({
           }}
         />
       ) : (
-        <Setup spec={spec} onSave={saveSetup} />
+        <Setup spec={spec} onSave={saveSetup} openId={setupFocus} />
       )}
 
       {status.kind !== "idle" && (
@@ -393,7 +413,10 @@ export function Tracker({
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setSetupFocus(null);
+              setTab(id);
+            }}
             aria-current={tab === id}
             aria-label={label}
             className={`flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 sm:px-4 ${

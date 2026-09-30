@@ -13,6 +13,9 @@ export type Data = Record<string, string | number | string[]>;
 export type Tone = "good" | "meh" | "bad";
 export type OptionSpec = { id: string; label: string; tone?: Tone };
 
+/** A line drawn on a number: "at most ₹500", "at least 2 hrs". Missing it is a slip. */
+export type Target = { op: "atLeast" | "atMost"; value: number };
+
 export type Condition =
   | { field: string; equals: string }
   | { field: string; notEquals: string }
@@ -23,7 +26,7 @@ export type FieldSpec =
   | (Base & { kind: "single"; options: OptionSpec[] })
   | (Base & { kind: "multi"; options: OptionSpec[] })
   | (Base & { kind: "counter"; max: number; goal: number; unit: string })
-  | (Base & { kind: "amount"; quick: number[]; prefix: string; suffix: string });
+  | (Base & { kind: "amount"; quick: number[]; prefix: string; suffix: string; target?: Target });
 
 export type SectionSpec = {
   id: string;
@@ -80,11 +83,11 @@ export const DEFAULT_SPEC: HabitSpec = {
           key: "sleep",
           label: "How long did you sleep?",
           options: [
-            { id: "lt5", label: "< 5h" },
-            { id: "5-6", label: "5–6h" },
-            { id: "6-7", label: "6–7h" },
-            { id: "7-8", label: "7–8h" },
-            { id: "8+", label: "8h+" },
+            { id: "lt5", label: "< 5h", tone: "bad" },
+            { id: "5-6", label: "5–6h", tone: "bad" },
+            { id: "6-7", label: "6–7h", tone: "good" },
+            { id: "7-8", label: "7–8h", tone: "good" },
+            { id: "8+", label: "8h+", tone: "good" },
           ],
         },
       ],
@@ -275,6 +278,89 @@ export function hasDedicatedFollowUp(spec: HabitSpec, fieldKey: string, value: s
     .some((f) => f.showIf && "equals" in f.showIf && f.showIf.field === fieldKey && f.showIf.equals === value);
 }
 
+// ---- what counts as a slip ----
+//
+// One idea drives every gap on the Patterns page: a question *slips* when its answer lands on
+// the wrong side of a line you drew. The line is an option you marked bad, a counter's goal
+// (a floor), or a limit on a number. Unanswered is never a slip; that's a blank.
+
+/** The line drawn on a number question, if any. A counter's goal is always a floor. */
+export function targetOf(field: FieldSpec): Target | undefined {
+  if (field.kind === "counter") return { op: "atLeast", value: field.goal };
+  if (field.kind === "amount") return field.target;
+  return undefined;
+}
+
+/**
+ * Is this answer on the wrong side of its line? A floor can't be judged while the day is still
+ * running (3 of 8 glasses at noon is on its way, not a slip), so it only counts once `dayOver`.
+ * A ceiling is broken the moment it's crossed, and a bad-toned option is a slip as soon as it's picked.
+ */
+export function isSlip(field: FieldSpec, value: Data[string] | undefined, dayOver: boolean): boolean {
+  if (field.kind === "single") return toneOfValue(field, value) === "bad";
+  if (typeof value !== "number") return false;
+  const t = targetOf(field);
+  if (!t) return false;
+  return t.op === "atMost" ? value > t.value : dayOver && value < t.value;
+}
+
+export const formatAmount = (f: Extract<FieldSpec, { kind: "amount" }>, n: number) =>
+  `${f.prefix}${n.toLocaleString()}${f.suffix ? ` ${f.suffix}` : ""}`;
+
+/** The section's lines in plain words ("< 5h or 5–6h", "Water under 8 glasses"). Empty = nothing can slip. */
+export function slipRules(section: SectionSpec): string[] {
+  const out: string[] = [];
+  for (const f of section.fields) {
+    if (f.kind === "single") {
+      const bad = f.options.filter((o) => o.tone === "bad").map((o) => o.label);
+      if (bad.length) out.push(bad.join(" or "));
+    } else if (f.kind === "counter") {
+      out.push(`${f.label} under ${f.goal} ${f.unit}`);
+    } else if (f.kind === "amount" && f.target) {
+      out.push(`${f.label} ${f.target.op === "atMost" ? "over" : "under"} ${formatAmount(f, f.target.value)}`);
+    }
+  }
+  return out;
+}
+
+/** Nothing in this section has a line, so only a missed day can ever show up as a gap. */
+export const canSlip = (section: SectionSpec) => slipRules(section).length > 0;
+
+/**
+ * Which field in a section should ask "why did this slip?" — at most one, so a day where both
+ * the amount and the verdict went wrong doesn't ask twice. Skips answers that already have a
+ * dedicated follow-up (Gym = Skipped asks "What stopped you?" itself).
+ */
+export function whyPromptKey(spec: HabitSpec, section: SectionSpec, data: Data, dayOver: boolean): string | undefined {
+  for (const f of section.fields) {
+    if (!fieldVisible(f, data)) continue;
+    const v = data[f.key];
+    if (!isSlip(f, v, dayOver)) continue;
+    if (typeof v === "string" && hasDedicatedFollowUp(spec, f.key, v)) continue;
+    return f.key;
+  }
+  return undefined;
+}
+
+// ---- splitting a number across your picks ("190 total: food 150, transport 40") ----
+//
+// No flag to set and nothing to migrate: a multi-choice that only appears once a number is
+// above zero ("On what?" after "Spent today") *is* that number's breakdown, so every spec that
+// already has the pattern, yours and your friends', gets it. Each pick may carry an optional
+// amount, stored as a plain number under a companion key in the same day blob.
+
+export type AmountField = Extract<FieldSpec, { kind: "amount" }>;
+
+export const splitKey = (fieldKey: string, optionId: string) => `${fieldKey}__${optionId}`;
+
+/** The number this multi-choice breaks down, if it's a breakdown at all. */
+export function breakdownOf(spec: HabitSpec, field: FieldSpec): AmountField | undefined {
+  const c = field.showIf;
+  if (field.kind !== "multi" || !c || !("greaterThanZero" in c)) return undefined;
+  const parent = spec.sections.flatMap((s) => s.fields).find((f) => f.key === c.field);
+  return parent?.kind === "amount" ? parent : undefined;
+}
+
 export const sectionDone = (entry: Entry, section: SectionSpec) =>
   section.fields.some((f) => hasValue(entry.data[f.key]));
 
@@ -328,10 +414,20 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
     if (fieldVisible(f, out) && data[f.key] !== undefined) out[f.key] = data[f.key];
   }
   // "why did this slip" tags only make sense while they still explain the current answer:
-  // the field is visible and its value is still the bad-toned one they were explaining.
+  // the field is visible and its value is still on the wrong side of its line.
   for (const f of allFields(spec)) {
     const wk = whyKey(f.key);
-    if (toneOfValue(f, out[f.key]) === "bad" && data[wk] !== undefined) out[wk] = data[wk];
+    if (isSlip(f, out[f.key], true) && data[wk] !== undefined) out[wk] = data[wk];
+  }
+  // An amount on a pick ("food 150") stands only while that pick is still selected. Unticking it,
+  // or zeroing the total so the whole question hides, drops it with no stale numbers left behind.
+  for (const f of allFields(spec)) {
+    if (!breakdownOf(spec, f)) continue;
+    const picked = Array.isArray(out[f.key]) ? (out[f.key] as string[]) : [];
+    for (const id of picked) {
+      const v = data[splitKey(f.key, id)];
+      if (typeof v === "number" && v > 0) out[splitKey(f.key, id)] = v;
+    }
   }
   // Section notes travel with the section: kept for any section still in the spec, dropped
   // when a whole section is removed in Setup (which is the same rule field answers follow).
@@ -351,9 +447,10 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
 // ---- sanitizing untrusted input ----
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,30}$/;
-// Stored keys are a field key or section id plus a companion suffix (_why, _note, _missed),
-// so they're allowed to run longer than the ids they're built from.
-const DATA_KEY_RE = /^[a-z][a-z0-9_]{0,44}$/;
+// Stored keys are a field key or section id plus a companion suffix (_why, _note, _missed) or
+// `fieldKey__optionId` for a per-pick amount, so they're allowed to run longer than the ids
+// they're built from (31 + 2 + 31).
+const DATA_KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
 
 /**
  * Generic, spec-independent bounds check for a day's answers. Deliberately doesn't need to
@@ -365,7 +462,7 @@ export function sanitizeData(input: unknown): Data {
   const out: Data = {};
   let count = 0;
   for (const key of Object.keys(src)) {
-    if (count >= 60 || !DATA_KEY_RE.test(key)) continue;
+    if (count >= 120 || !DATA_KEY_RE.test(key)) continue;
     const v = src[key];
     if (typeof v === "string") {
       // any *_note key is free text (bumped from 60 to SECTION_NOTE_MAX); other strings
@@ -470,6 +567,15 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
       : [50, 100, 250, 500];
     const prefix = clamp(f.prefix, 6);
     const suffix = clamp(f.suffix, 6);
+    const rawTarget = f.target && typeof f.target === "object" ? (f.target as Record<string, unknown>) : {};
+    const target: Target | undefined =
+      (rawTarget.op === "atLeast" || rawTarget.op === "atMost") &&
+      typeof rawTarget.value === "number" &&
+      Number.isFinite(rawTarget.value) &&
+      rawTarget.value >= 0 &&
+      rawTarget.value <= 1_000_000
+        ? { op: rawTarget.op, value: Math.round(rawTarget.value * 100) / 100 }
+        : undefined;
     return {
       kind: "amount",
       key,
@@ -477,6 +583,7 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
       quick: quick.length ? quick : [50, 100, 250, 500],
       prefix,
       suffix,
+      ...(target ? { target } : {}),
       ...(showIf ? { showIf } : {}),
     };
   }

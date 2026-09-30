@@ -33,6 +33,8 @@ type Props = {
   pulse: { date: string; n: number };
   onPick: (date: string) => void;
   onFocus: (month: string, text: string) => void;
+  /** open this section in Setup, e.g. to set what counts as a slip */
+  onSetup: (sectionId: string) => void;
 };
 
 /**
@@ -49,7 +51,7 @@ export function Overview(p: Props) {
       <Hero mirror={mirror} windowDays={windowDays} onWindow={setWindowDays} />
       {mirror.totals.planned > 0 && <Legend />}
       {mirror.rows.map((r) => (
-        <Row key={r.id} row={r} compact={windowDays > 7} onPick={p.onPick} />
+        <Row key={r.id} row={r} compact={windowDays > 7} onPick={p.onPick} onSetup={p.onSetup} />
       ))}
       <Heatmap {...p} />
       <MonthCard {...p} />
@@ -200,7 +202,7 @@ function Legend() {
 
 function Squares({ cells, compact, onPick }: { cells: Cell[]; compact: boolean; onPick: (d: string) => void }) {
   return (
-    <div className="flex gap-[3px]">
+    <div className="flex gap-0.75">
       {cells.map((c) => (
         <button
           key={c.date}
@@ -221,7 +223,17 @@ function Squares({ cells, compact, onPick }: { cells: Cell[]; compact: boolean; 
 
 /* ------------------------------ one section, mirrored ------------------------------ */
 
-function Row({ row, compact, onPick }: { row: RowMirror; compact: boolean; onPick: (d: string) => void }) {
+function Row({
+  row,
+  compact,
+  onPick,
+  onSetup,
+}: {
+  row: RowMirror;
+  compact: boolean;
+  onPick: (d: string) => void;
+  onSetup: (sectionId: string) => void;
+}) {
   const Icon = iconFor(row.icon);
   const gapWords = [row.slipped ? `${row.slipped} slipped` : "", row.blank ? `${row.blank} not logged` : ""].filter(Boolean).join(", ");
 
@@ -238,6 +250,20 @@ function Row({ row, compact, onPick }: { row: RowMirror; compact: boolean; onPic
       <div className="mt-3">
         <Squares cells={row.cells} compact={compact} onPick={onPick} />
       </div>
+
+      {/* the line this row is measured against, so a "slip" is never a mystery */}
+      <p className="mt-2 text-[11px] text-ink/60">
+        {row.rules.length > 0 ? (
+          <>Slips if: {row.rules.join(" · ")}</>
+        ) : (
+          <>
+            Nothing here can slip yet, so only missed days count.{" "}
+            <button type="button" onClick={() => onSetup(row.id)} className="font-medium text-ink underline underline-offset-2">
+              Set a target
+            </button>
+          </>
+        )}
+      </p>
 
       {row.planned === 0 ? (
         <p className="mt-3 text-sm text-ink/60">Nothing planned in this window yet.</p>
@@ -256,6 +282,14 @@ function Row({ row, compact, onPick }: { row: RowMirror; compact: boolean; onPic
             </Line>
           )}
         </dl>
+      )}
+
+      {row.where.length > 0 && (
+        <p className="mt-3 text-sm">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/50">Where it went</span>
+          <br />
+          {row.where.map((w) => `${w.label} ${w.amount}`).join(" · ")}
+        </p>
       )}
 
       {row.notes.length > 0 && (

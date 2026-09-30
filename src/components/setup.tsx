@@ -4,10 +4,12 @@ import { useState } from "react";
 import { ChevronDown, Plus, RotateCcw, Trash2 } from "lucide-react";
 import {
   DEFAULT_SPEC,
+  breakdownOf,
   EVERY_DAY,
   LIMITS,
   WEEKDAYS_ONLY,
   WEEKENDS_ONLY,
+  canSlip,
   scheduleLabel,
   schedulePreset,
   uniqueSlug,
@@ -22,17 +24,27 @@ import { ICON_IDS, iconFor } from "@/lib/icons";
 import { Chip } from "./ui";
 
 type Save = "idle" | "saving" | "saved" | "error";
-const input =
-  "w-full rounded-xl border border-ink/15 bg-white/70 px-3 py-2 text-sm outline-none transition-colors focus:border-ink";
+const inputBase =
+  "rounded-xl border border-ink/15 bg-white/70 px-3 py-2 text-sm outline-none transition-colors focus:border-ink";
+const input = `w-full ${inputBase}`;
 const select = `${input} appearance-none`;
 
 const allKeys = (spec: HabitSpec) => new Set(spec.sections.flatMap((s) => s.fields.map((f) => f.key)));
 
-export function Setup({ spec, onSave }: { spec: HabitSpec; onSave: (next: HabitSpec) => Promise<boolean> }) {
+export function Setup({
+  spec,
+  onSave,
+  openId,
+}: {
+  spec: HabitSpec;
+  onSave: (next: HabitSpec) => Promise<boolean>;
+  /** a section to open straight away, e.g. when arriving from a Patterns row */
+  openId?: string | null;
+}) {
   const [draft, setDraft] = useState(spec);
   const [save, setSave] = useState<Save>("idle");
   // Collapsed by default — editing one section shouldn't mean scrolling past every other one.
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [open, setOpen] = useState<Set<string>>(new Set(openId ? [openId] : []));
   const dirty = JSON.stringify(draft) !== JSON.stringify(spec);
 
   function toggle(id: string) {
@@ -228,6 +240,7 @@ function SectionEditor({
           <p className="truncate text-xs text-ink/55">
             {section.hint ? `${section.hint} · ` : ""}
             {section.fields.length} question{section.fields.length === 1 ? "" : "s"} · {scheduleLabel(section.days)}
+            {!canSlip(section) && " · no target yet"}
           </p>
         </div>
         <ChevronDown size={18} className={`shrink-0 text-ink/50 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
@@ -479,12 +492,12 @@ function FieldEditor({
 
       <div className="mt-3">
         {(field.kind === "single" || field.kind === "multi") && (
-          <OptionsEditor options={field.options} onChange={(options) => onChange({ options })} />
+          <OptionsEditor tones={field.kind === "single"} options={field.options} onChange={(options) => onChange({ options })} />
         )}
         {field.kind === "counter" && (
           <div className="flex flex-wrap gap-3 text-xs">
             <label className="flex items-center gap-1.5">
-              Goal
+              Hit at least
               <input
                 type="number"
                 min={1}
@@ -509,6 +522,7 @@ function FieldEditor({
               Unit
               <input value={field.unit} maxLength={20} onChange={(e) => onChange({ unit: e.target.value })} className={`${input} w-24 py-1`} />
             </label>
+            <p className="w-full text-[11px] text-ink/55">Falling short counts as a slip once the day is over.</p>
           </div>
         )}
         {field.kind === "amount" && (
@@ -548,9 +562,62 @@ function FieldEditor({
                 className={`${input} w-40 py-1`}
               />
             </label>
+            <div className="flex w-full flex-wrap items-center gap-2">
+              <span className="font-medium text-ink/70">Target</span>
+              <select
+                value={field.target?.op ?? "none"}
+                onChange={(e) => {
+                  const op = e.target.value;
+                  // start from your biggest quick-add so "Up to" never begins at 0 (where any spend is a slip)
+                  if (op === "atLeast" || op === "atMost") onChange({ target: { op, value: field.target?.value ?? field.quick[field.quick.length - 1] ?? 1 } });
+                  else onChange({ target: undefined });
+                }}
+                className={`${inputBase} appearance-none rounded-full py-1.5`}
+              >
+                <option value="none">None</option>
+                <option value="atMost">Up to</option>
+                <option value="atLeast">At least</option>
+              </select>
+              {field.target && (
+                <label className="flex items-center gap-1">
+                  {field.prefix}
+                  {/* committed on blur so clearing the box to retype doesn't snap to 0 mid-edit */}
+                  <input
+                    key={field.target.value}
+                    type="number"
+                    min={0}
+                    inputMode="decimal"
+                    defaultValue={field.target.value}
+                    aria-label="Target amount"
+                    onBlur={(e) => {
+                      const n = Number(e.target.value);
+                      if (e.target.value !== "" && Number.isFinite(n) && n >= 0 && field.target) {
+                        onChange({ target: { op: field.target.op, value: Math.min(1_000_000, n) } });
+                      } else e.target.value = String(field.target?.value ?? 0);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                    className={`${inputBase} w-24 py-1`}
+                  />
+                  {field.suffix}
+                </label>
+              )}
+              <p className="w-full text-[11px] text-ink/55">
+                {field.target
+                  ? field.target.op === "atMost"
+                    ? "Going over it counts as a slip."
+                    : "Falling short counts as a slip once the day is over."
+                  : "Optional. Set one and Patterns will show the days you missed it."}
+              </p>
+            </div>
           </div>
         )}
       </div>
+
+      {breakdownOf(spec, field) && (
+        <p className="mt-2 text-[11px] text-ink/55">
+          This breaks down &ldquo;{breakdownOf(spec, field)?.label}&rdquo;: each pick you choose on Today can get its own optional amount.
+        </p>
+      )}
 
       <ConditionEditor field={field} eligibleParents={eligibleParents} onChange={onChange} />
     </div>
@@ -584,8 +651,20 @@ function TonePicker({ value, onChange }: { value: Tone | undefined; onChange: (t
   );
 }
 
-function OptionsEditor({ options, onChange }: { options: OptionSpec[]; onChange: (options: OptionSpec[]) => void }) {
+function OptionsEditor({
+  options,
+  tones,
+  onChange,
+}: {
+  options: OptionSpec[];
+  /** single choice only: there, an option's color decides what counts as a slip. On a
+   *  multi-choice (e.g. which muscles you hit) nothing can slip, so no colors are offered. */
+  tones: boolean;
+  onChange: (options: OptionSpec[]) => void;
+}) {
   const usedIds = new Set(options.map((o) => o.id));
+  // the cutoff rewrites every color at once, so it stays tucked away until asked for
+  const [cutoff, setCutoff] = useState(false);
 
   function update(i: number, patch: Partial<OptionSpec>) {
     onChange(options.map((o, j) => (j === i ? { ...o, ...patch } : o)));
@@ -606,7 +685,7 @@ function OptionsEditor({ options, onChange }: { options: OptionSpec[]; onChange:
       {options.map((o, i) => (
         <div key={o.id} className="flex items-center gap-2">
           <input value={o.label} maxLength={30} onChange={(e) => update(i, { label: e.target.value })} className={`${input} flex-1 py-1.5 text-sm`} />
-          <TonePicker value={o.tone} onChange={(tone) => update(i, { tone })} />
+          {tones && <TonePicker value={o.tone} onChange={(tone) => update(i, { tone })} />}
           {options.length > 2 && (
             <button type="button" onClick={() => remove(i)} aria-label="Remove option" className="chip flex size-7 items-center justify-center rounded-full text-bad/80">
               <Trash2 size={12} />
@@ -622,6 +701,41 @@ function OptionsEditor({ options, onChange }: { options: OptionSpec[]; onChange:
       >
         <Plus size={12} /> Add option
       </button>
+
+      {tones && (
+        <div className="space-y-1.5 border-t border-ink/10 pt-2 text-[11px] text-ink/60">
+          <p>Orange means a slip on Patterns. Yellow and green don&apos;t.</p>
+          {options.length >= 3 &&
+            (cutoff ? (
+              <label className="flex flex-wrap items-center gap-2">
+                Good from (everything before it becomes a slip)
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const at = options.findIndex((o) => o.id === e.target.value);
+                    if (at >= 0) onChange(options.map((o, j) => ({ ...o, tone: j < at ? "bad" : "good" })));
+                    setCutoff(false);
+                  }}
+                  className={`${inputBase} appearance-none rounded-full py-1 text-xs`}
+                >
+                  <option value="">pick one…</option>
+                  {options.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => setCutoff(false)} className="underline underline-offset-2 hover:text-ink">
+                  Cancel
+                </button>
+              </label>
+            ) : (
+              <button type="button" onClick={() => setCutoff(true)} className="underline underline-offset-2 hover:text-ink">
+                Ordered scale, like hours? Set a cutoff
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
