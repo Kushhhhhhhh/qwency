@@ -24,6 +24,7 @@ export const WHY_TAGS = [
 
 export const NOTE_MAX = 1000;
 export const FOCUS_MAX = 120;
+export const REVIEW_NOTE_MAX = 300;
 
 export type Entry = { mood: Mood | null; tags: string[]; note: string; data: Data };
 export type Entries = Record<string, Entry>;
@@ -58,6 +59,21 @@ export const monthOf = (key: string) => key.slice(0, 7);
 export function daysInMonth(month: string) {
   const [y, m] = month.split("-").map(Number);
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+/** The month `n` months from `month` (YYYY-MM). Negative goes back. */
+export function addMonths(month: string, n: number) {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+}
+
+/** Every date in a month, in order. */
+export function monthDates(month: string) {
+  return Array.from({ length: daysInMonth(month) }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
+}
+
+export function monthName(month: string, style: "long" | "short" = "long") {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: style, timeZone: "UTC" });
 }
 
 export function prettyDate(key: string) {

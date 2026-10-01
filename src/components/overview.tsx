@@ -1,20 +1,23 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { dayDone, dayTotal, hasActivity, type HabitSpec } from "@/lib/spec";
-import { buildMirror, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
+import { useState } from "react";
+import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
+import { buildMirrorOver, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
+import type { MonthPlan } from "@/lib/goals";
 import { iconFor } from "@/lib/icons";
 import {
-  FOCUS_MAX,
   WEEKDAYS,
   addDays,
-  daysInMonth,
+  addMonths,
+  monthDates,
+  monthName,
   monthOf,
   shortDate,
   weekdayIndex,
   type Entries,
   type Mood,
 } from "@/lib/tracker";
+import { MonthCard, MonthReview, worthReviewing } from "./month";
 
 const WEEKS = 10;
 const MOOD_VAR: Record<Mood, string> = {
@@ -26,35 +29,76 @@ const MOOD_VAR: Record<Mood, string> = {
 type Props = {
   entries: Entries;
   today: string;
-  focus: string;
+  focuses: Record<string, string>;
+  plans: Record<string, MonthPlan>;
   streak: number;
   selected: string;
   spec: HabitSpec;
   pulse: { date: string; n: number };
   onPick: (date: string) => void;
   onFocus: (month: string, text: string) => void;
+  onPlan: (month: string, plan: MonthPlan) => void;
   /** open this section in Setup, e.g. to set what counts as a slip */
   onSetup: (sectionId: string) => void;
 };
 
+type View = "7" | "30" | "this" | "last";
+
 /**
- * Patterns is a mirror: Reality, Gap, Reason — first for everything together, then for each
- * section against its own schedule. The heatmap and monthly direction sit underneath as
- * context. All the arithmetic lives in lib/mirror.ts.
+ * Patterns, top to bottom: where the month is heading (direction), then the mirror (Reality, Gap,
+ * Reason: first for everything together, then for each section against its own schedule), with the
+ * heatmap underneath as context. The mirror can look at the last 7 or 30 days, or a calendar
+ * month. Goal arithmetic lives in lib/goals.ts, the mirror's in lib/mirror.ts.
  */
 export function Overview(p: Props) {
-  const [windowDays, setWindowDays] = useState<7 | 30>(7);
-  const mirror = buildMirror(p.spec, p.entries, p.today, windowDays);
+  const [view, setView] = useState<View>("7");
+  const thisMonth = monthOf(p.today);
+  const lastMonth = addMonths(thisMonth, -1);
+
+  const trailing = (n: number) => Array.from({ length: n }, (_, i) => addDays(p.today, -(n - 1 - i)));
+  const dates =
+    view === "7"
+      ? trailing(7)
+      : view === "30"
+        ? trailing(30)
+        : view === "this"
+          ? monthDates(thisMonth).filter((d) => d <= p.today)
+          : monthDates(lastMonth);
+  const mirror = buildMirrorOver(p.spec, p.entries, p.today, dates);
+
+  const common = { entries: p.entries, today: p.today, spec: p.spec, onPlan: p.onPlan };
+  // a month that just ended is looked at for its first ten days, if it had a plan worth looking back at
+  const reviewing = Number(p.today.slice(8)) <= 10 && worthReviewing(p.plans[lastMonth], p.focuses[lastMonth] ?? "");
 
   return (
     <div className="flex flex-col gap-4">
-      <Hero mirror={mirror} windowDays={windowDays} onWindow={setWindowDays} />
+      {reviewing && <MonthReview {...common} month={lastMonth} focus={p.focuses[lastMonth] ?? ""} plan={p.plans[lastMonth] ?? { goals: [] }} />}
+      <MonthCard
+        {...common}
+        month={thisMonth}
+        focus={p.focuses[thisMonth] ?? ""}
+        plan={p.plans[thisMonth] ?? { goals: [] }}
+        lastMonth={lastMonth}
+        lastPlan={p.plans[lastMonth]}
+        streak={p.streak}
+        onFocus={p.onFocus}
+      />
+      <Hero
+        mirror={mirror}
+        value={view}
+        onChange={setView}
+        options={[
+          { id: "7", label: "7 days" },
+          { id: "30", label: "30 days" },
+          { id: "this", label: monthName(thisMonth, "short") },
+          { id: "last", label: monthName(lastMonth, "short") },
+        ]}
+      />
       {mirror.totals.planned > 0 && <Legend />}
       {mirror.rows.map((r) => (
-        <Row key={r.id} row={r} compact={windowDays > 7} onPick={p.onPick} onSetup={p.onSetup} />
+        <Row key={r.id} row={r} compact={dates.length > 7} onPick={p.onPick} onSetup={p.onSetup} />
       ))}
       <Heatmap {...p} />
-      <MonthCard {...p} />
     </div>
   );
 }
@@ -63,12 +107,14 @@ export function Overview(p: Props) {
 
 function Hero({
   mirror,
-  windowDays,
-  onWindow,
+  value,
+  onChange,
+  options,
 }: {
-  mirror: ReturnType<typeof buildMirror>;
-  windowDays: 7 | 30;
-  onWindow: (n: 7 | 30) => void;
+  mirror: ReturnType<typeof buildMirrorOver>;
+  value: View;
+  onChange: (v: View) => void;
+  options: { id: View; label: string }[];
 }) {
   const { totals, reasons, startedOn } = mirror;
   const windowStart = mirror.rows[0]?.cells[0]?.date ?? "";
@@ -79,17 +125,17 @@ function Hero({
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-medium uppercase tracking-wider text-ink/70">The mirror</p>
         <div className="flex rounded-full border border-ink/10 bg-white/70 p-0.5 text-xs font-medium">
-          {([7, 30] as const).map((n) => (
+          {options.map((o) => (
             <button
-              key={n}
+              key={o.id}
               type="button"
-              onClick={() => onWindow(n)}
-              aria-pressed={windowDays === n}
-              className={`rounded-full px-3 py-1 transition-colors ${
-                windowDays === n ? "bg-ink text-cream" : "text-ink/75 hover:text-ink"
+              onClick={() => onChange(o.id)}
+              aria-pressed={value === o.id}
+              className={`rounded-full px-2.5 py-1 transition-colors ${
+                value === o.id ? "bg-ink text-cream" : "text-ink/75 hover:text-ink"
               }`}
             >
-              {n} days
+              {o.label}
             </button>
           ))}
         </div>
@@ -264,6 +310,9 @@ function Row({
           </>
         )}
       </p>
+      {row.rulesChangedOn && (
+        <p className="mt-1 text-[11px] text-ink/60">Rules changed {shortDate(row.rulesChangedOn)}. Earlier days keep the old ones.</p>
+      )}
 
       {row.planned === 0 ? (
         <p className="mt-3 text-sm text-ink/60">Nothing planned in this window yet.</p>
@@ -332,7 +381,8 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
       if (hasActivity(e, spec)) return "color-mix(in oklab, var(--color-ink) 22%, transparent)";
     } else if (hasActivity(e, spec)) {
       // measured against what was planned that day, so a light weekend isn't a poor one
-      const share = dayDone(e, d, spec) / dayTotal(spec, d);
+      const then = specAt(spec, d);
+      const share = dayDone(e, d, then) / dayTotal(then, d);
       return `color-mix(in oklab, var(--color-ink) ${25 + share * 75}%, transparent)`;
     }
     return "color-mix(in oklab, var(--color-ink) 6%, transparent)";
@@ -374,14 +424,17 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
                   const d = days[week * 7 + day];
                   const popped = pulse.date === d;
                   const future = d > today;
+                  const then = specAt(spec, d);
+                  const done = dayDone(entries[d], d, then);
+                  const planned = dayTotal(then, d);
                   return (
                     <button
                       key={popped ? `${d}-${pulse.n}` : d}
                       type="button"
                       disabled={future}
                       onClick={() => onPick(d)}
-                      aria-label={`${shortDate(d)}: ${dayDone(entries[d], d, spec)} of ${dayTotal(spec, d)} planned done`}
-                      title={future ? "" : `${shortDate(d)} · ${dayDone(entries[d], d, spec)}/${dayTotal(spec, d)} planned done`}
+                      aria-label={`${shortDate(d)}: ${done} of ${planned} planned done`}
+                      title={future ? "" : `${shortDate(d)} · ${done}/${planned} planned done`}
                       style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
                       className={`size-[17px] shrink-0 rounded-[5px] transition-transform ${future ? "invisible" : "hover:scale-110"} ${
                         popped ? "cell-in" : "rise"
@@ -395,75 +448,6 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
         </div>
         <p className="mt-3 text-[11px] text-ink/60">Darker = more of what you planned that day. Tap a day to open it.</p>
       </div>
-    </section>
-  );
-}
-
-/* ------------------------------ monthly = direction ------------------------------ */
-
-const MILESTONES = [3, 7, 14, 30, 60, 100];
-
-function MonthCard({ entries, today, focus, streak, spec, onFocus }: Props) {
-  const month = monthOf(today);
-  const daysInThisMonth = daysInMonth(month);
-  const dayOfMonth = Number(today.slice(8));
-  const [text, setText] = useState(focus);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const keys = Array.from({ length: daysInThisMonth }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
-  const logged = keys.filter((k) => hasActivity(entries[k], spec)).length;
-  const next = MILESTONES.find((m) => m > streak);
-
-  return (
-    <section className="tile tile-good p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/70">This month · direction</p>
-      <input
-        value={text}
-        maxLength={FOCUS_MAX}
-        onChange={(e) => {
-          const v = e.target.value;
-          setText(v);
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => onFocus(month, v), 1500);
-        }}
-        onBlur={() => {
-          if (timer.current) clearTimeout(timer.current);
-          if (text !== focus) onFocus(month, text);
-        }}
-        placeholder="Where am I heading this month?"
-        className="mt-2 w-full border-b border-ink/25 bg-transparent pb-2 text-lg font-medium outline-none transition-colors placeholder:text-ink/50 focus:border-ink"
-      />
-
-      <div className="mt-4 flex items-center justify-between text-sm">
-        <span>
-          <b className="text-xl font-semibold tabular-nums">{logged}</b>
-          <span className="text-ink/75"> / {dayOfMonth} days logged</span>
-        </span>
-        <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-semibold">
-          {streak > 0 ? `${streak}-day streak` : "No streak yet"}
-        </span>
-      </div>
-
-      <div className="mt-3 flex h-2 gap-[2px]">
-        {keys.map((k) => {
-          const e = entries[k];
-          const share = hasActivity(e, spec) ? dayDone(e, k, spec) / dayTotal(spec, k) : 0;
-          return (
-            <i
-              key={k}
-              className="h-full flex-1 rounded-full transition-colors duration-300"
-              style={{
-                background: hasActivity(e, spec)
-                  ? `color-mix(in oklab, var(--color-ink) ${25 + share * 75}%, transparent)`
-                  : k > today
-                    ? "transparent"
-                    : "color-mix(in oklab, var(--color-ink) 10%, transparent)",
-              }}
-            />
-          );
-        })}
-      </div>
-      {streak > 0 && next && <p className="mt-3 text-xs text-ink/70">{next - streak} more days to a {next}-day streak.</p>}
     </section>
   );
 }

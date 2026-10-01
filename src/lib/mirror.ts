@@ -2,13 +2,16 @@ import { addDays, WHY_TAGS, type Entries, type Entry } from "./tracker";
 import {
   breakdownOf,
   formatAmount,
+  isCustom,
   isExpected,
   isSlip,
+  optionLabelOf,
   scheduleLabel,
   sectionDone,
   sectionMissKey,
   sectionNoteKey,
   slipRules,
+  specAt,
   splitKey,
   startedOn,
   whyKey,
@@ -43,6 +46,8 @@ export type RowMirror = {
   schedule: string;
   /** what counts as a slip here, in words; empty means nothing in this section can slip */
   rules: string[];
+  /** when a rule here last changed, if that's inside the window: earlier days keep the old rule */
+  rulesChangedOn?: string;
   /** where a number went, from the optional per-pick amounts ("Food ₹450"), biggest first */
   where: { label: string; amount: string }[];
   cells: Cell[];
@@ -69,9 +74,6 @@ export type Mirror = {
 const whyLabel = (id: string) => WHY_TAGS.find((t) => t.id === id)?.label ?? id;
 const strings = (v: unknown): string[] => (Array.isArray(v) ? (v as unknown[]).filter((x): x is string => typeof x === "string") : []);
 
-const optionLabel = (f: FieldSpec, id: string) =>
-  f.kind === "single" || f.kind === "multi" ? (f.options.find((o) => o.id === id)?.label ?? id) : id;
-
 /**
  * Reasons behind a slip: the reason chips tapped for it, plus the answer to any dedicated
  * follow-up ("What stopped you?" only appears when Gym = Skipped), so a reason you already
@@ -83,8 +85,8 @@ function reasonsForSlip(spec: HabitSpec, entry: Entry, field: FieldSpec, value: 
   for (const g of spec.sections.flatMap((s) => s.fields)) {
     if (!g.showIf || !("equals" in g.showIf) || g.showIf.field !== field.key || g.showIf.equals !== value) continue;
     const a = entry.data[g.key];
-    if (typeof a === "string") out.push(optionLabel(g, a));
-    else for (const id of strings(a)) out.push(optionLabel(g, id));
+    if (typeof a === "string") out.push(optionLabelOf(g, a));
+    else for (const id of strings(a)) out.push(optionLabelOf(g, id));
   }
   return out;
 }
@@ -145,11 +147,13 @@ function whereItWent(spec: HabitSpec, s: SectionSpec, dates: string[], entries: 
     for (const d of dates) {
       const data = entries[d]?.data;
       if (!data) continue;
-      for (const o of f.options) {
-        const v = data[splitKey(f.key, o.id)];
+      for (const id of strings(data[f.key])) {
+        const v = data[splitKey(f.key, id)];
         if (typeof v !== "number" || v <= 0) continue;
-        const k = `${f.key}:${o.id}`;
-        tally.set(k, { label: o.label, total: (tally.get(k)?.total ?? 0) + v, format: (n) => formatAmount(parent, n) });
+        // a day-only pick ("Haircut") adds up across days by its words, whatever case it was typed in
+        const label = optionLabelOf(f, id);
+        const k = isCustom(id) ? `${f.key}:~${label.toLowerCase()}` : `${f.key}:${id}`;
+        tally.set(k, { label: tally.get(k)?.label ?? label, total: (tally.get(k)?.total ?? 0) + v, format: (n) => formatAmount(parent, n) });
       }
     }
   }
@@ -159,13 +163,14 @@ function whereItWent(spec: HabitSpec, s: SectionSpec, dates: string[], entries: 
     .map((t) => ({ label: t.label, amount: t.format(Math.round(t.total * 100) / 100) }));
 }
 
+/** The newest day a rule in this section took effect (the day after a past rule ended), if any. */
+function lastRuleChange(s: SectionSpec): string | undefined {
+  const ends = [...(s.past ?? []), ...s.fields.flatMap((f) => f.past ?? [])].map((p) => p.until).sort();
+  return ends.length ? addDays(ends[ends.length - 1], 1) : undefined;
+}
+
 function summarize(
-  id: string,
-  title: string,
-  icon: string,
-  schedule: string,
-  rules: string[],
-  where: RowMirror["where"],
+  meta: Pick<RowMirror, "id" | "title" | "icon" | "schedule" | "rules" | "where" | "rulesChangedOn">,
   cells: Cell[],
 ): RowMirror {
   const count = (st: CellState) => cells.filter((c) => c.state === st).length;
@@ -179,17 +184,12 @@ function summarize(
   for (const c of gapCells) {
     for (const label of c.reasons) {
       const k = label.toLowerCase();
-      tally.set(k, { label, n: (tally.get(k)?.n ?? 0) + 1 });
+      tally.set(k, { label: tally.get(k)?.label ?? label, n: (tally.get(k)?.n ?? 0) + 1 }); // first spelling wins
     }
   }
 
   return {
-    id,
-    title,
-    icon,
-    schedule,
-    rules,
-    where,
+    ...meta,
     cells,
     planned: done + slipped + blank,
     done,
@@ -207,24 +207,43 @@ function summarize(
   };
 }
 
+/** The last `windowDays` days, ending today. */
 export function buildMirror(spec: HabitSpec, entries: Entries, today: string, windowDays: number): Mirror {
+  const dates = Array.from({ length: windowDays }, (_, i) => addDays(today, -(windowDays - 1 - i)));
+  return buildMirrorOver(spec, entries, today, dates);
+}
+
+/** The same mirror over any run of dates, e.g. a calendar month (never later than today). */
+export function buildMirrorOver(spec: HabitSpec, entries: Entries, today: string, dates: string[]): Mirror {
   const started = startedOn(entries, spec);
   const from = started ?? today;
-  const dates = Array.from({ length: windowDays }, (_, i) => addDays(today, -(windowDays - 1 - i)));
+  const windowDays = dates.length;
 
-  const rows: RowMirror[] = spec.sections.map((s) =>
-    summarize(
-      s.id,
-      s.title,
-      s.icon,
-      scheduleLabel(s.days),
-      slipRules(s),
-      whereItWent(spec, s, dates, entries),
-      dates.map((d) => sectionCell(spec, s, d, entries[d], today, from)),
-    ),
-  );
+  // every day is judged by the spec as it was that day, so changing a rule today never
+  // rewrites last month (see specAt)
+  const rows: RowMirror[] = spec.sections.map((s, i) => {
+    const changed = lastRuleChange(s);
+    return summarize(
+      {
+        id: s.id,
+        title: s.title,
+        icon: s.icon,
+        schedule: scheduleLabel(s.days),
+        rules: slipRules(s),
+        where: whereItWent(spec, s, dates, entries),
+        ...(changed && changed > dates[0] ? { rulesChangedOn: changed } : {}),
+      },
+      dates.map((d) => {
+        const then = specAt(spec, d);
+        return sectionCell(then, then.sections[i], d, entries[d], today, from);
+      }),
+    );
+  });
   rows.push(
-    summarize("__day", "The day overall", "sun", scheduleLabel(EVERY_DAY), ["Rough"], [], dates.map((d) => dayCell(d, entries[d], today, from))),
+    summarize(
+      { id: "__day", title: "The day overall", icon: "sun", schedule: scheduleLabel(EVERY_DAY), rules: ["Rough"], where: [] },
+      dates.map((d) => dayCell(d, entries[d], today, from)),
+    ),
   );
 
   // gaps first — that's what the page is for — otherwise keep the order you set up
@@ -236,7 +255,7 @@ export function buildMirror(spec: HabitSpec, entries: Entries, today: string, wi
   for (const r of rows) {
     for (const rc of r.reasons) {
       const k = rc.label.toLowerCase();
-      tally.set(k, { label: rc.label, n: (tally.get(k)?.n ?? 0) + rc.n });
+      tally.set(k, { label: tally.get(k)?.label ?? rc.label, n: (tally.get(k)?.n ?? 0) + rc.n });
     }
   }
 

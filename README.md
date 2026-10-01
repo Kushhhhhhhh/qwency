@@ -67,3 +67,69 @@ it applies to every saved spec that already has the pattern. Each pick you choos
 amount box ("Split it up"), stored as a plain number under `fieldKey__optionId` in the same day
 blob. Today says how much of the total is unsplit; Patterns adds "Where it went" for the window.
 An amount is dropped when its pick is unticked or the total goes back to zero.
+
+## Staying current (stale tabs, other devices)
+
+The app outlives the day: phones park tabs for hours. Three rules keep that safe:
+
+- **Saves are patches.** A tap sends only the keys it changed (`patchData` in `src/app/actions.ts`,
+  `diffData` / `applyPatch` in `src/lib/spec.ts`), merged into whatever the server already has
+  for that day. A stale tab or a second device can no longer wipe answers logged elsewhere.
+- **Coming back refreshes quietly** (`sync` in `src/components/tracker.tsx`, rules in
+  `src/lib/sync.ts`): when the tab returns to the foreground, "today" rolls forward (and you
+  follow it if you were on "today"), and the server's state is folded in. It only does this at
+  most every 15s, and never while a save is in flight or if you edited meanwhile.
+- **Nothing unsaved is overwritten.** A save that failed (offline) is remembered and re-sent;
+  until then a refresh keeps the screen's copy of that day.
+
+Both the first page load and the refresh read through `readSnapshot` (`src/lib/snapshot.ts`).
+New users' default spec is written once, only if missing, instead of on every page load.
+
+## History: a past day keeps the rules it had
+
+Changing a rule in Setup (a schedule, which options count as a slip, a counter's goal, a number's
+target) must not rewrite days you already lived. When you save, the server keeps the rule you *had*
+as history up to yesterday (`recordHistory` in `src/lib/spec.ts`, stored inside the spec JSON as
+`past` lists on the section or question, so no new table or column). `specAt(spec, date)` returns
+the spec as it stood on that day, and everything that judges a day (Today, the day strip, the
+heatmap, Patterns) is handed that. History comes from the spec already saved, never from what the
+client sends. Two edits in one day record nothing extra, and each list is capped at 6 entries.
+A rule set for the *first* time (a question with no slip line gets one) records nothing: there was
+no standard to move, so it gives meaning to the days already logged.
+Patterns says "Rules changed {date}" on a row when that falls inside the window.
+
+Old answers recorded under an old option id (Sleep's `5-6`, Skin's `wash-am`, ...) are read as
+today's id when days are loaded (`normalizeData`); nothing stored is rewritten.
+
+## Day-only picks
+
+"Add for this day" on a choice question adds a pick for that day only, so a one-off ("Knee pain")
+never piles up in your options. Its words travel inside the answer (`"~Knee pain"`), nothing is
+added to your setup, and it still works as a reason on Patterns and can carry a split amount. For
+something you want every day, add the option in Setup.
+
+Removing an option in Setup never loses history either. The server remembers its id and words
+(`gone` on the question, same place as `past`), and when days are loaded, answers that used it are
+re-expressed as day-only picks with those words, amounts included (`normalizeData`). So an option
+you added once for a single purchase can be deleted and still shows on the day you used it.
+
+## Monthly direction: goals and a month-end review
+
+Monthly = direction, so a month is more than a focus line. Each calendar month can hold up to six
+goals (`src/lib/goals.ts`), and every one is **measured from what you already log**, never ticked:
+
+- **days**: "do this section on at least N days" (counted from the same Reality as Patterns, each
+  day by its own rules), or "a Good or Okay day on N days".
+- **total**: "keep a number within / at least X this month", summed from an amount or counter question.
+
+Progress is compared with how far through the month (or its planned days) you are, in plain words:
+on pace, behind, out of reach, over, reached, missed. Suggestions come from your own setup: 80% of
+a section's planned days, and a ceiling from what last month's spending actually came to.
+
+When a month ends, the next one opens (for its first ten days) with that month's review: each
+goal's verdict, your focus line, and "did you move toward it?" with room to say why. The mirror's
+window also takes calendar months (`buildMirrorOver`), so "Sep" shows September as it was.
+
+Goals and the review live in one new column, `month_focus.plan` (JSON). Run `supabase/schema.sql`
+again once: it adds the column and is safe to re-run. Until then the app still loads (the page reads
+every column, so a missing one just means no goals yet) but saving goals fails.

@@ -2,7 +2,9 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { getDb } from "@/lib/db";
-import { sanitizeData, sanitizeSpec, type Data, type HabitSpec } from "@/lib/spec";
+import { applyPatch, recordHistory, sanitizeData, sanitizeSpec, type Data, type HabitSpec } from "@/lib/spec";
+import { readSnapshot, type Snapshot } from "@/lib/snapshot";
+import { sanitizePlan, type MonthPlan } from "@/lib/goals";
 import {
   DATE_RE,
   FOCUS_MAX,
@@ -61,22 +63,38 @@ export async function setMood(date: string, mood: Mood | null): Promise<Result> 
   );
 }
 
-/** Replaces the day's tracked answers (whatever the user's own spec asks for) as a whole. */
-export async function saveData(date: string, data: Data): Promise<Result> {
+/**
+ * Saves what one tap changed, merged into whatever the server already holds for that day.
+ * Never "replace the whole day": a tab that's out of date, or a second device, would silently
+ * wipe answers the other one logged. Only the keys this tap touched are written.
+ */
+export async function patchData(date: string, set: Data, remove: string[]): Promise<Result> {
   if (!validDate(date)) return { ok: false };
-  return run(async (userId) =>
-    (await getDb())
+  const drop = Array.isArray(remove) ? remove.filter((k): k is string => typeof k === "string" && k.length <= 64).slice(0, 120) : [];
+  const add = sanitizeData(set);
+  return run(async (userId) => {
+    const db = getDb();
+    const found = await db.from("day_entries").select("data").eq("user_id", userId).eq("entry_date", date).maybeSingle();
+    if (found.error) return found;
+    const merged = applyPatch((found.data?.data as Data | null) ?? {}, add, drop);
+    return db
       .from("day_entries")
       .upsert(
-        {
-          user_id: userId,
-          entry_date: date,
-          data: sanitizeData(data),
-          updated_at: new Date().toISOString(),
-        },
+        { user_id: userId, entry_date: date, data: merged, updated_at: new Date().toISOString() },
         { onConflict: "user_id,entry_date" },
-      ),
-  );
+      );
+  });
+}
+
+/** A fresh read of everything, for an app that's been in the background. Null if it couldn't be read. */
+export async function loadSnapshot(): Promise<Snapshot | null> {
+  try {
+    const userId = await requireUser();
+    return await readSnapshot(getDb(), userId);
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 }
 
 export async function saveTags(date: string, tags: string[]): Promise<Result> {
@@ -109,13 +127,35 @@ export async function saveNote(date: string, note: string): Promise<Result> {
   );
 }
 
-/** Replaces the user's whole habit spec (what a day tracks) with a validated version of `next`. */
-export async function saveSpec(next: HabitSpec): Promise<Result> {
+/**
+ * Replaces the user's habit spec (what a day tracks) with a validated version of `next`. If a
+ * rule changed (a schedule, what counts as a slip, a goal or target), the rule they *had* is
+ * kept as history, taken from the spec already saved and never from the client, so days already
+ * lived keep the rules they were judged by. `today` is the user's own calendar day. Returns the
+ * spec as saved, so the screen shows exactly what the server holds.
+ */
+export async function saveSpec(next: HabitSpec, today: string): Promise<Result & { spec?: HabitSpec }> {
+  if (!validDate(today)) return { ok: false };
   const clean = sanitizeSpec(next);
-  return run(async (userId) =>
-    (await getDb())
+  let saved: HabitSpec = clean;
+  const result = await run(async (userId) => {
+    const db = getDb();
+    const before = await db.from("habit_specs").select("spec").eq("user_id", userId).maybeSingle();
+    if (before.error) return before;
+    saved = before.data ? recordHistory(sanitizeSpec(before.data.spec), clean, today) : recordHistory({ sections: [] }, clean, today);
+    return db
       .from("habit_specs")
-      .upsert({ user_id: userId, spec: clean, updated_at: new Date().toISOString() }, { onConflict: "user_id" }),
+      .upsert({ user_id: userId, spec: saved, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  });
+  return result.ok ? { ok: true, spec: saved } : result;
+}
+
+/** A month's goals and review. Validated here; only that column is written, so the focus line is untouched. */
+export async function savePlan(month: string, plan: MonthPlan): Promise<Result> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return { ok: false };
+  const clean = sanitizePlan(plan);
+  return run(async (userId) =>
+    (await getDb()).from("month_focus").upsert({ user_id: userId, month, plan: clean }, { onConflict: "user_id,month" }),
   );
 }
 

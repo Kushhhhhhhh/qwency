@@ -1,5 +1,5 @@
 import { ICON_IDS, DEFAULT_ICON } from "./icons";
-import { DATE_RE, WEEKDAYS, weekdayIndex, type Entries, type Entry } from "./tracker";
+import { DATE_RE, WEEKDAYS, addDays, weekdayIndex, type Entries, type Entry } from "./tracker";
 
 // What a single day tracks (sleep, work, gym, water, spending, ...) is *your* choice, stored
 // as one spec per user, edited with the screen in components/setup.tsx. This file defines the
@@ -16,12 +16,22 @@ export type OptionSpec = { id: string; label: string; tone?: Tone };
 /** A line drawn on a number: "at most ₹500", "at least 2 hrs". Missing it is a slip. */
 export type Target = { op: "atLeast" | "atMost"; value: number };
 
+// Rules change, and a past day should keep the rules it was judged by. Each section and field
+// keeps a short list of what its rule *was* up to and including a date (oldest first); the
+// current rule is simply what's on the section/field itself. `specAt` reads these.
+export type SectionPast = { until: string; days: number[] };
+/** A field's slip line before it changed: the bad option ids, a counter's goal, or a number's target (null = none). */
+export type FieldPast = { until: string; bad?: string[]; goal?: number; target?: Target | null };
+
 export type Condition =
   | { field: string; equals: string }
   | { field: string; notEquals: string }
   | { field: string; greaterThanZero: true };
 
-type Base = { key: string; label: string; showIf?: Condition };
+/** An option that was removed in Setup: its id and words, so days that used it can still show it. */
+export type GoneOption = { id: string; label: string };
+
+type Base = { key: string; label: string; showIf?: Condition; past?: FieldPast[]; gone?: GoneOption[] };
 export type FieldSpec =
   | (Base & { kind: "single"; options: OptionSpec[] })
   | (Base & { kind: "multi"; options: OptionSpec[] })
@@ -37,6 +47,8 @@ export type SectionSpec = {
   days: number[];
   /** Date the section was added (YYYY-MM-DD). Days before it are never counted as gaps. Absent on older sections. */
   since?: string;
+  /** What the schedule was before it last changed, oldest first. Written by the server, never trusted from the client. */
+  past?: SectionPast[];
   fields: FieldSpec[];
 };
 
@@ -351,7 +363,29 @@ export function whyPromptKey(spec: HabitSpec, section: SectionSpec, data: Data, 
 
 export type AmountField = Extract<FieldSpec, { kind: "amount" }>;
 
-export const splitKey = (fieldKey: string, optionId: string) => `${fieldKey}__${optionId}`;
+const PLAIN_ID = /^[a-z][a-z0-9_]*$/;
+function shortHash(text: string) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+/** Where a pick's optional amount lives. Ordinary ids are used as-is; anything else (a day-only pick, an id with a hyphen) is hashed into a safe key. */
+export const splitKey = (fieldKey: string, optionId: string) =>
+  `${fieldKey}__${PLAIN_ID.test(optionId) ? optionId : `x_${shortHash(optionId.toLowerCase())}`}`;
+
+// A pick made for one day only: "Add for this day" on Today. The label travels inside the answer
+// itself ("~Knee pain"), so nothing is added to your setup and it's gone tomorrow. Real option
+// ids never start with "~". For something you want every day, add the option in Setup.
+export const CUSTOM_PICK_MAX = 28;
+export const CUSTOM_PICKS_PER_FIELD = 5;
+export const isCustom = (id: string) => id.startsWith("~");
+export const customId = (label: string) => `~${label.trim().replace(/\s+/g, " ").slice(0, CUSTOM_PICK_MAX)}`;
+/** The words for an answer: a day-only pick carries its own, otherwise the option's label. */
+export function optionLabelOf(field: FieldSpec, id: string): string {
+  if (isCustom(id)) return id.slice(1);
+  const found = field.kind === "single" || field.kind === "multi" ? field.options.find((o) => o.id === id) : undefined;
+  return found?.label ?? id;
+}
 
 /** The number this multi-choice breaks down, if it's a breakdown at all. */
 export function breakdownOf(spec: HabitSpec, field: FieldSpec): AmountField | undefined {
@@ -444,6 +478,125 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
   return out;
 }
 
+// ---- history: a day is judged by the rules it had, not the ones you have now ----
+
+const asOfCache = new WeakMap<HabitSpec, Map<string, HabitSpec>>();
+
+function fieldAt(f: FieldSpec, date: string): FieldSpec {
+  const p = f.past?.find((x) => date <= x.until); // oldest first: the first entry still covering this day
+  if (!p) return f;
+  if (f.kind === "single" && p.bad) {
+    const bad = new Set(p.bad);
+    return {
+      ...f,
+      options: f.options.map((o) => {
+        const rest = { ...o };
+        delete rest.tone;
+        const tone = bad.has(o.id) ? "bad" : o.tone === "bad" ? undefined : o.tone;
+        return tone ? { ...rest, tone } : rest;
+      }),
+    };
+  }
+  if (f.kind === "counter" && p.goal !== undefined) return { ...f, goal: p.goal };
+  if (f.kind === "amount" && p.target !== undefined) {
+    const rest = { ...f };
+    delete rest.target;
+    return p.target ? { ...rest, target: p.target } : rest;
+  }
+  return f;
+}
+
+/**
+ * The spec as it stood on `date`: same sections and questions, but with the schedule, slip
+ * options, goals and targets you had that day. Everything that judges a day (planned or not,
+ * slipped or not) takes a spec, so callers just pass `specAt(spec, date)`. Costs nothing when
+ * nothing has ever changed: it returns the very same object.
+ */
+export function specAt(spec: HabitSpec, date: string): HabitSpec {
+  let byDate = asOfCache.get(spec);
+  if (!byDate) asOfCache.set(spec, (byDate = new Map()));
+  const hit = byDate.get(date);
+  if (hit) return hit;
+
+  let changed = false;
+  const sections = spec.sections.map((s) => {
+    const days = s.past?.find((p) => date <= p.until)?.days;
+    const fields = s.fields.map((f) => fieldAt(f, date));
+    if (!days && fields.every((f, i) => f === s.fields[i])) return s;
+    changed = true;
+    return { ...s, days: days ?? s.days, fields };
+  });
+  const out = changed ? { ...spec, sections } : spec;
+  byDate.set(date, out);
+  return out;
+}
+
+/** A copy without the server-kept bookkeeping (history, removed options), which the client never gets to set. */
+const withoutKept = <T extends object>(o: T): T => {
+  const copy = { ...o } as Record<string, unknown>;
+  delete copy.past;
+  delete copy.gone;
+  return copy as T;
+};
+const badIds = (f: FieldSpec) => (f.kind === "single" ? f.options.filter((o) => o.tone === "bad").map((o) => o.id).sort() : []);
+const sameTarget = (a: Target | undefined, b: Target | undefined) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * Called by the server when you save Setup. If a rule changed (a schedule, which options slip,
+ * a goal or a target), the rule you *had* is recorded as running up to yesterday, so the days
+ * already lived keep being judged by it. History comes only from the spec already saved, never
+ * from what the client sent. Two changes in one day record nothing extra: the first rule never
+ * judged a day of its own. A rule set for the *first* time (a question that had no slip line gets
+ * one) records nothing either: there was no standard to move, so it simply gives meaning to the
+ * days already logged.
+ *
+ * Removing an option records its id and words too (`gone`), so days that used it keep it, as a
+ * day-only pick, instead of the answer silently losing its meaning.
+ */
+export function recordHistory(prev: HabitSpec, next: HabitSpec, today: string): HabitSpec {
+  const until = addDays(today, -1);
+  const add = <T extends { until: string }>(list: T[] | undefined, entry: T): T[] => {
+    const base = list ?? [];
+    return base.length && base[base.length - 1].until >= until ? base : [...base, entry].slice(-MAX_PAST);
+  };
+
+  const sections = next.sections.map((s): SectionSpec => {
+    const ps = prev.sections.find((x) => x.id === s.id);
+    if (!ps) return { ...withoutKept(s), fields: s.fields.map((f) => withoutKept(f)) }; // a new section has no past
+    let past = ps.past;
+    if (!sameDays(ps.days, s.days)) past = add(past, { until, days: ps.days });
+
+    const fields = s.fields.map((f): FieldSpec => {
+      const pf = ps.fields.find((x) => x.key === f.key && x.kind === f.kind);
+      if (!pf) return withoutKept(f);
+      let fp = pf.past;
+      let gone = pf.gone;
+      if (f.kind === "single" && pf.kind === "single") {
+        const was = badIds(pf);
+        const now = badIds(f);
+        if (was.length > 0 && (was.length !== now.length || was.some((id, i) => id !== now[i]))) fp = add(fp, { until, bad: was });
+      } else if (f.kind === "counter" && pf.kind === "counter") {
+        if (pf.goal !== f.goal) fp = add(fp, { until, goal: pf.goal });
+      } else if (f.kind === "amount" && pf.kind === "amount") {
+        if (pf.target && !sameTarget(pf.target, f.target)) fp = add(fp, { until, target: pf.target });
+      }
+      if ((f.kind === "single" || f.kind === "multi") && (pf.kind === "single" || pf.kind === "multi")) {
+        const have = new Set(f.options.map((o) => o.id));
+        const removed = pf.options.filter((o) => !have.has(o.id)).map((o) => ({ id: o.id, label: o.label }));
+        // an option that's back is no longer gone; the newest removals win when the list is full
+        gone = [...(gone ?? []).filter((g) => !have.has(g.id) && !removed.some((r) => r.id === g.id)), ...removed].slice(-MAX_GONE);
+      }
+      return {
+        ...withoutKept(f),
+        ...(fp?.length ? { past: fp } : {}),
+        ...(gone?.length ? { gone } : {}),
+      } as FieldSpec;
+    });
+    return { ...withoutKept(s), ...(past?.length ? { past } : {}), fields };
+  });
+  return { ...next, sections };
+}
+
 // ---- sanitizing untrusted input ----
 
 const KEY_RE = /^[a-z][a-z0-9_]{0,30}$/;
@@ -482,6 +635,29 @@ export function sanitizeData(input: unknown): Data {
   return out;
 }
 
+/** What changed between two versions of a day's answers: the keys to set and the keys to remove. */
+export function diffData(before: Data, after: Data): { set: Data; remove: string[] } {
+  const set: Data = {};
+  const remove: string[] = [];
+  for (const [k, v] of Object.entries(after)) {
+    if (JSON.stringify(before[k]) !== JSON.stringify(v)) set[k] = v;
+  }
+  for (const k of Object.keys(before)) if (!(k in after)) remove.push(k);
+  return { set, remove };
+}
+
+/**
+ * Applies one tap's worth of change to whatever the server already holds for that day. Saving
+ * only what changed, instead of replacing the whole day, means a tab that's out of date can't
+ * wipe answers that were logged somewhere else.
+ */
+export function applyPatch(base: Data, set: Data, remove: string[]): Data {
+  const merged: Data = { ...base };
+  for (const k of remove) delete merged[k];
+  Object.assign(merged, set);
+  return sanitizeData(merged);
+}
+
 export function slugify(text: string, fallback = "item") {
   const s = text
     .toLowerCase()
@@ -504,6 +680,8 @@ export function uniqueSlug(text: string, used: Set<string>, fallback = "item") {
 const MAX_SECTIONS = 8;
 const MAX_FIELDS = 6;
 const MAX_OPTIONS = 8;
+const MAX_PAST = 6;
+const MAX_GONE = 12;
 
 // Shared with the editor, so its "add" buttons disable at the same caps this file enforces.
 export const LIMITS = { sections: MAX_SECTIONS, fields: MAX_FIELDS, options: MAX_OPTIONS };
@@ -540,6 +718,63 @@ function sanitizeCondition(input: unknown, seenKeys: Set<string>): Condition | u
   return undefined;
 }
 
+function sanitizeTarget(input: unknown): Target | undefined {
+  const raw = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  return (raw.op === "atLeast" || raw.op === "atMost") &&
+    typeof raw.value === "number" &&
+    Number.isFinite(raw.value) &&
+    raw.value >= 0 &&
+    raw.value <= 1_000_000
+    ? { op: raw.op, value: Math.round(raw.value * 100) / 100 }
+    : undefined;
+}
+
+/** A history list: dated entries, oldest to newest, each reduced to what `pick` keeps. Anything malformed is dropped. */
+function sanitizePast<T extends { until: string }>(input: unknown, pick: (p: Record<string, unknown>) => Omit<T, "until"> | null): T[] {
+  if (!Array.isArray(input)) return [];
+  const out: T[] = [];
+  for (const raw of input.slice(0, MAX_PAST)) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = raw as Record<string, unknown>;
+    if (typeof p.until !== "string" || !DATE_RE.test(p.until)) continue;
+    if (out.length && p.until <= out[out.length - 1].until) continue; // must run oldest to newest
+    const rest = pick(p);
+    if (rest) out.push({ until: p.until, ...rest } as T);
+  }
+  return out;
+}
+
+const pickDays = (p: Record<string, unknown>) => {
+  const days = sanitizeDays(p.days);
+  return days ? { days } : null;
+};
+const pickBad = (p: Record<string, unknown>) =>
+  Array.isArray(p.bad)
+    ? { bad: [...new Set(p.bad.filter((x): x is string => typeof x === "string" && x.length <= 30))].slice(0, MAX_OPTIONS) }
+    : null;
+const pickGoal = (p: Record<string, unknown>) =>
+  typeof p.goal === "number" && Number.isFinite(p.goal) ? { goal: Math.min(60, Math.max(1, Math.round(p.goal))) } : null;
+const pickTarget = (p: Record<string, unknown>) => {
+  if (p.target === null) return { target: null };
+  const t = sanitizeTarget(p.target);
+  return t ? { target: t } : null;
+};
+
+function sanitizeGone(input: unknown): GoneOption[] {
+  if (!Array.isArray(input)) return [];
+  const out: GoneOption[] = [];
+  const seen = new Set<string>();
+  for (const raw of input.slice(0, MAX_GONE)) {
+    if (!raw || typeof raw !== "object") continue;
+    const { id, label } = raw as Record<string, unknown>;
+    const words = clamp(label, 30);
+    if (typeof id !== "string" || !id || id.length > 30 || !words || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, label: words });
+  }
+  return out;
+}
+
 function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undefined {
   if (!input || typeof input !== "object") return undefined;
   const f = input as Record<string, unknown>;
@@ -556,7 +791,8 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
     const max = Math.min(60, Math.max(1, Math.round(Number(f.max)) || 10));
     const goal = Math.min(max, Math.max(1, Math.round(Number(f.goal)) || Math.ceil(max / 2)));
     const unit = clamp(f.unit, 20) || "times";
-    return { kind: "counter", key, label, max, goal, unit, ...(showIf ? { showIf } : {}) };
+    const past = sanitizePast<FieldPast>(f.past, pickGoal);
+    return { kind: "counter", key, label, max, goal, unit, ...(past.length ? { past } : {}), ...(showIf ? { showIf } : {}) };
   }
   if (f.kind === "amount") {
     const quick = Array.isArray(f.quick)
@@ -567,15 +803,8 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
       : [50, 100, 250, 500];
     const prefix = clamp(f.prefix, 6);
     const suffix = clamp(f.suffix, 6);
-    const rawTarget = f.target && typeof f.target === "object" ? (f.target as Record<string, unknown>) : {};
-    const target: Target | undefined =
-      (rawTarget.op === "atLeast" || rawTarget.op === "atMost") &&
-      typeof rawTarget.value === "number" &&
-      Number.isFinite(rawTarget.value) &&
-      rawTarget.value >= 0 &&
-      rawTarget.value <= 1_000_000
-        ? { op: rawTarget.op, value: Math.round(rawTarget.value * 100) / 100 }
-        : undefined;
+    const target = sanitizeTarget(f.target);
+    const past = sanitizePast<FieldPast>(f.past, pickTarget);
     return {
       kind: "amount",
       key,
@@ -584,6 +813,7 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
       prefix,
       suffix,
       ...(target ? { target } : {}),
+      ...(past.length ? { past } : {}),
       ...(showIf ? { showIf } : {}),
     };
   }
@@ -591,7 +821,9 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
   const options = sanitizeOptions(f.options, optionIds);
   if (options.length < 2) return undefined; // a choice needs at least two choices
   const kind = f.kind === "multi" ? "multi" : "single";
-  return { kind, key, label, options, ...(showIf ? { showIf } : {}) };
+  const past = kind === "single" ? sanitizePast<FieldPast>(f.past, pickBad) : [];
+  const gone = sanitizeGone(f.gone);
+  return { kind, key, label, options, ...(past.length ? { past } : {}), ...(gone.length ? { gone } : {}), ...(showIf ? { showIf } : {}) };
 }
 
 /**
@@ -635,7 +867,9 @@ export function sanitizeSpec(input: unknown): HabitSpec {
     const days = sanitizeDays(s.days) ?? (hadWeekendDefault ? WEEKDAYS_ONLY : EVERY_DAY);
     const since = typeof s.since === "string" && DATE_RE.test(s.since) ? s.since : undefined;
 
-    sections.push({ id, title, hint, icon, days, ...(since ? { since } : {}), fields });
+    const past = sanitizePast<SectionPast>(s.past, pickDays);
+
+    sections.push({ id, title, hint, icon, days, ...(since ? { since } : {}), ...(past.length ? { past } : {}), fields });
   }
 
   return { sections: sections.length ? sections : DEFAULT_SPEC.sections };
@@ -645,4 +879,77 @@ function sanitizeDays(input: unknown): number[] | null {
   if (!Array.isArray(input)) return null;
   const days = [...new Set(input.map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6))].sort((a, b) => a - b);
   return days.length ? days : null;
+}
+
+// Ids this app used before option ids were sanitized: DEFAULT_SPEC still carries them (Sleep's
+// "5-6", Skin's "wash-am", ...), while every real spec holds the sanitized form ("opt2",
+// "face_wash_am"). A day recorded under an old id would match no option and read as unanswered,
+// so map them across, per question, as days are read. Nothing stored is rewritten.
+const LEGACY_IDS: Record<string, Record<string, string>> = (() => {
+  const out: Record<string, Record<string, string>> = {};
+  const now = sanitizeSpec(DEFAULT_SPEC).sections.flatMap((sec) => sec.fields);
+  for (const raw of DEFAULT_SPEC.sections.flatMap((sec) => sec.fields)) {
+    const cur = now.find((f) => f.key === raw.key);
+    if ((raw.kind !== "single" && raw.kind !== "multi") || !cur || (cur.kind !== "single" && cur.kind !== "multi")) continue;
+    raw.options.forEach((o, i) => {
+      const to = cur.options[i]?.id;
+      if (to && to !== o.id) (out[raw.key] ??= {})[o.id] = to;
+    });
+  }
+  return out;
+})();
+
+/**
+ * Re-expresses a day's answers in the options your current spec has (see LEGACY_IDS), and keeps
+ * answers that used an option you've since removed: they become day-only picks with the same
+ * words, and any amount split onto them follows. Returns the same object when nothing needs
+ * mapping, and never writes anything.
+ */
+export function normalizeData(spec: HabitSpec, data: Data): Data {
+  let out: Data | null = null;
+  const edit = () => (out ??= { ...data });
+  for (const f of allFields(spec)) {
+    if (f.kind !== "single" && f.kind !== "multi") continue;
+    const known = new Set(f.options.map((o) => o.id));
+    const map = new Map<string, string>();
+    for (const [legacy, to] of Object.entries(LEGACY_IDS[f.key] ?? {})) if (!known.has(legacy) && known.has(to)) map.set(legacy, to);
+    for (const g of f.gone ?? []) if (!known.has(g.id)) map.set(g.id, customId(g.label));
+    if (map.size === 0) continue;
+
+    const fix = (id: string) => map.get(id) ?? id;
+    const v = data[f.key];
+    if (typeof v === "string") {
+      const n = fix(v);
+      if (n !== v) edit()[f.key] = n;
+    } else if (Array.isArray(v)) {
+      const n = v.map(fix);
+      if (n.some((x, i) => x !== v[i])) edit()[f.key] = n;
+    }
+    // an amount that was split onto a removed option moves to its day-only form (an amount already
+    // saved under the new form wins). Checked whether or not the id is still in the answer, so a
+    // day that was edited after the removal doesn't lose it.
+    if (f.kind === "multi") {
+      for (const g of f.gone ?? []) {
+        if (known.has(g.id)) continue;
+        const oldKey = splitKey(f.key, g.id);
+        const amount = data[oldKey];
+        if (typeof amount !== "number") continue;
+        const newKey = splitKey(f.key, customId(g.label));
+        const o = edit();
+        if (!(newKey in o)) o[newKey] = amount;
+        delete o[oldKey];
+      }
+    }
+  }
+  return out ?? data;
+}
+
+/** `normalizeData` over a set of days; the same object when nothing changed. */
+export function normalizeEntries(spec: HabitSpec, entries: Entries): Entries {
+  let out: Entries | null = null;
+  for (const [date, e] of Object.entries(entries)) {
+    const data = normalizeData(spec, e.data);
+    if (data !== e.data) (out ??= { ...entries })[date] = { ...e, data };
+  }
+  return out ?? entries;
 }

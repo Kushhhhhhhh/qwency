@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { dayDone, dayTotal, hasActivity, type HabitSpec } from "@/lib/spec";
+import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { addDays, weekdayIndex, WEEKDAYS, type Entries } from "@/lib/tracker";
 
 const DAYS = 21;
@@ -20,9 +20,10 @@ export function DayStrip({
   onSelect: (d: string) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  // also when the day rolls over, so the new "Today" isn't left off-screen to the right
   useEffect(() => {
     box.current?.scrollTo({ left: box.current.scrollWidth });
-  }, []);
+  }, [today]);
 
   const days = Array.from({ length: DAYS }, (_, i) => addDays(today, i - (DAYS - 1)));
 
@@ -31,7 +32,9 @@ export function DayStrip({
       {days.map((d) => {
         const on = d === selected;
         const active = hasActivity(entries[d], spec);
-        const complete = active && dayDone(entries[d], d, spec) >= dayTotal(spec, d);
+        // each day against the plan it had, so a later change never rewrites it
+        const then = specAt(spec, d);
+        const complete = active && dayDone(entries[d], d, then) >= dayTotal(then, d);
         return (
           <button
             key={d}

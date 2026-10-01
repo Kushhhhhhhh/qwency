@@ -21,6 +21,7 @@ import {
 } from "@/lib/spec";
 import { WEEKDAYS, localKey } from "@/lib/tracker";
 import { ICON_IDS, iconFor } from "@/lib/icons";
+import { canon } from "@/lib/sync";
 import { Chip } from "./ui";
 
 type Save = "idle" | "saving" | "saved" | "error";
@@ -45,7 +46,8 @@ export function Setup({
   const [save, setSave] = useState<Save>("idle");
   // Collapsed by default — editing one section shouldn't mean scrolling past every other one.
   const [open, setOpen] = useState<Set<string>>(new Set(openId ? [openId] : []));
-  const dirty = JSON.stringify(draft) !== JSON.stringify(spec);
+  // history (`past`) and removed options (`gone`) are kept by the server, not edited here, so they never count as an unsaved change
+  const dirty = canon(draft, "past", "gone") !== canon(spec, "past", "gone");
 
   function toggle(id: string) {
     setOpen((o) => {
@@ -110,8 +112,9 @@ export function Setup({
         <p className="text-xs font-medium uppercase tracking-wider text-ink/50">Setup</p>
         <h2 className="mt-1 text-base font-semibold">What you track each day</h2>
         <p className="mt-1 text-sm text-ink/60">
-          Change what your day tracks. The overall verdict stays fixed for everyone so patterns
-          stay comparable. Old days aren't touched.
+          Change what your day tracks. Changing a rule counts from today on, so past days keep the
+          rule they had; a rule you set for the first time covers days already logged. The overall
+          verdict stays fixed for everyone so patterns stay comparable.
         </p>
         <div className="mt-4">
           <button
@@ -701,6 +704,7 @@ function OptionsEditor({
       >
         <Plus size={12} /> Add option
       </button>
+      <p className="text-[11px] text-ink/55">Removing an option keeps it on the days you used it, as a day-only pick.</p>
 
       {tones && (
         <div className="space-y-1.5 border-t border-ink/10 pt-2 text-[11px] text-ink/60">

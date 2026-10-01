@@ -29,6 +29,10 @@ create table if not exists public.month_focus (
   primary key (user_id, month)
 );
 
+-- A month's direction beyond the focus line: its goals and its end-of-month review, as JSON
+-- ({ goals: [...], review?: {...} }). One column, no new table; safe to re-run.
+alter table public.month_focus add column if not exists plan jsonb not null default '{}'::jsonb;
+
 -- One personalized spec per user: which sections/questions their day tracks, and their
 -- weekend defaults. Seeded from the app's DEFAULT_SPEC on first visit, then editable in Setup.
 create table if not exists public.habit_specs (

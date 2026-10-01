@@ -2,7 +2,19 @@
 
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { fieldVisible, formatAmount, LIMITS, splitKey, whyKey, type AmountField, type Data, type FieldSpec } from "@/lib/spec";
+import {
+  CUSTOM_PICKS_PER_FIELD,
+  CUSTOM_PICK_MAX,
+  fieldVisible,
+  formatAmount,
+  isCustom,
+  optionLabelOf,
+  splitKey,
+  whyKey,
+  type AmountField,
+  type Data,
+  type FieldSpec,
+} from "@/lib/spec";
 import { Chip } from "./ui";
 import { WhySelector } from "./why-selector";
 
@@ -16,17 +28,18 @@ type Props = {
   split?: AmountField;
   onChange: (key: string, value: Value) => void;
   onWhy: (key: string, tags: string[]) => void;
-  onAddOption: (field: FieldSpec, label: string) => void;
+  /** a pick made for this day only; nothing is added to the user's setup */
+  onCustom: (field: FieldSpec, label: string) => void;
 };
 
-export function FieldView({ field, data, askWhy, split, onChange, onWhy, onAddOption }: Props) {
+export function FieldView({ field, data, askWhy, split, onChange, onWhy, onCustom }: Props) {
   const open = fieldVisible(field, data);
   return (
     <div className="fold" data-open={open} inert={!open}>
       <div>
         <div className="pt-4">
           <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
-          <Body field={field} data={data} split={split} onChange={onChange} onAddOption={onAddOption} />
+          <Body field={field} data={data} split={split} onChange={onChange} onCustom={onCustom} />
           {/* whether it opens is decided once per section (whyPromptKey), so two slips don't ask twice */}
           {field.kind !== "multi" && (
             <WhySelector
@@ -42,29 +55,39 @@ export function FieldView({ field, data, askWhy, split, onChange, onWhy, onAddOp
   );
 }
 
-function Body({ field, data, split, onChange, onAddOption }: Pick<Props, "field" | "data" | "split" | "onChange" | "onAddOption">) {
+function Body({ field, data, split, onChange, onCustom }: Pick<Props, "field" | "data" | "split" | "onChange" | "onCustom">) {
   const v = data[field.key];
 
   if (field.kind === "single") {
+    const custom = typeof v === "string" && isCustom(v) ? v : null;
     return (
-      <div className="flex flex-wrap gap-2">
-        {field.options.map((o) => (
-          <Chip
-            key={o.id}
-            on={v === o.id}
-            tone={o.tone}
-            onClick={() => onChange(field.key, v === o.id ? undefined : o.id)}
-          >
-            {o.label}
-          </Chip>
-        ))}
-        <AddOption field={field} onAdd={(label) => onAddOption(field, label)} />
+      <div>
+        <div className="flex flex-wrap gap-2">
+          {field.options.map((o) => (
+            <Chip
+              key={o.id}
+              on={v === o.id}
+              tone={o.tone}
+              onClick={() => onChange(field.key, v === o.id ? undefined : o.id)}
+            >
+              {o.label}
+            </Chip>
+          ))}
+          {custom && (
+            <Chip on onClick={() => onChange(field.key, undefined)}>
+              {optionLabelOf(field, custom)}
+            </Chip>
+          )}
+          <AddOption onAdd={(label) => onCustom(field, label)} />
+        </div>
+        {custom && <DayOnlyNote />}
       </div>
     );
   }
 
   if (field.kind === "multi") {
     const cur = (v as string[] | undefined) ?? [];
+    const custom = cur.filter(isCustom);
     return (
       <div>
         <div className="flex flex-wrap gap-2">
@@ -83,8 +106,21 @@ function Body({ field, data, split, onChange, onAddOption }: Pick<Props, "field"
               </Chip>
             );
           })}
-          <AddOption field={field} onAdd={(label) => onAddOption(field, label)} />
+          {custom.map((id) => (
+            <Chip
+              key={id}
+              on
+              onClick={() => {
+                const next = cur.filter((x) => x !== id);
+                onChange(field.key, next.length ? next : undefined);
+              }}
+            >
+              {optionLabelOf(field, id)}
+            </Chip>
+          ))}
+          {custom.length < CUSTOM_PICKS_PER_FIELD && <AddOption onAdd={(label) => onCustom(field, label)} />}
         </div>
+        {custom.length > 0 && <DayOnlyNote />}
         {split && <SplitRows field={field} parent={split} data={data} onChange={onChange} />}
       </div>
     );
@@ -145,7 +181,11 @@ function SplitRows({
   onChange: Props["onChange"];
 }) {
   const cur = (data[field.key] as string[] | undefined) ?? [];
-  const picked = field.options.filter((o) => cur.includes(o.id));
+  // the options you picked, in your setup's order, then any day-only picks
+  const picked = [
+    ...field.options.filter((o) => cur.includes(o.id)).map((o) => ({ id: o.id, label: o.label })),
+    ...cur.filter(isCustom).map((id) => ({ id, label: optionLabelOf(field, id) })),
+  ];
   const total = typeof data[parent.key] === "number" ? (data[parent.key] as number) : 0;
   const part = (id: string) => {
     const v = data[splitKey(field.key, id)];
@@ -229,18 +269,19 @@ function SplitInput({
   );
 }
 
-/** "Other" with no way to say what it was is a dead end — lets you add a real, permanent
- * option on the spot. It's saved to your Setup immediately, so it's there to tap next time too. */
-function AddOption({
-  field,
-  onAdd,
-}: {
-  field: Extract<FieldSpec, { kind: "single" | "multi" }>;
-  onAdd: (label: string) => void;
-}) {
+/** Says why a chip is there, and where to go if it should stay. */
+function DayOnlyNote() {
+  return <p className="mt-2 text-[11px] text-ink/60">Added for this day only. To keep it every day, add it in Setup.</p>;
+}
+
+/**
+ * "Other" with no way to say what it was is a dead end. This adds a pick for *this day only*:
+ * it isn't added to the question's options, so a one-off never piles up there. Something you
+ * want every day belongs in Setup.
+ */
+function AddOption({ onAdd }: { onAdd: (label: string) => void }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  if (field.options.length >= LIMITS.options) return null;
 
   function submit() {
     const label = text.trim();
@@ -256,7 +297,7 @@ function AddOption({
         onClick={() => setOpen(true)}
         className="chip flex items-center gap-1 rounded-full px-3.5 py-2 text-sm text-ink/60"
       >
-        <Plus size={14} /> Write your own
+        <Plus size={14} /> Add for this day
       </button>
     );
   }
@@ -264,7 +305,7 @@ function AddOption({
     <input
       autoFocus
       value={text}
-      maxLength={30}
+      maxLength={CUSTOM_PICK_MAX}
       onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => e.key === "Enter" && submit()}
       onBlur={submit}
