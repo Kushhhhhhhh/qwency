@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { buildMirrorOver, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
+import { findLinks, trendLine, weekdayShape, type Link, type Trend } from "@/lib/insights";
 import type { MonthPlan } from "@/lib/goals";
 import { iconFor } from "@/lib/icons";
 import {
@@ -31,7 +32,7 @@ type Props = {
   today: string;
   focuses: Record<string, string>;
   plans: Record<string, MonthPlan>;
-  streak: number;
+  run: { days: number; brokeOn: string | null };
   selected: string;
   spec: HabitSpec;
   pulse: { date: string; n: number };
@@ -66,6 +67,20 @@ export function Overview(p: Props) {
           : monthDates(lastMonth);
   const mirror = buildMirrorOver(p.spec, p.entries, p.today, dates);
 
+  // the same stretch one step earlier, to say "more or fewer than before"
+  const shift = (n: number) => dates.map((d) => addDays(d, -n));
+  const earlier =
+    view === "7"
+      ? { dates: shift(7), label: "the 7 days before" }
+      : view === "30"
+        ? { dates: shift(30), label: "the 30 days before" }
+        : view === "this"
+          ? { dates: monthDates(lastMonth).slice(0, dates.length), label: `${monthName(lastMonth)} at this point` }
+          : { dates: monthDates(addMonths(lastMonth, -1)), label: monthName(addMonths(lastMonth, -1)) };
+  const trend = trendLine(p.spec, p.entries, p.today, dates, earlier.dates, earlier.label);
+  const shape = weekdayShape(mirror);
+  const links = findLinks(p.spec, p.entries, p.today);
+
   const common = { entries: p.entries, today: p.today, spec: p.spec, onPlan: p.onPlan };
   // a month that just ended is looked at for its first ten days, if it had a plan worth looking back at
   const reviewing = Number(p.today.slice(8)) <= 10 && worthReviewing(p.plans[lastMonth], p.focuses[lastMonth] ?? "");
@@ -80,13 +95,15 @@ export function Overview(p: Props) {
         plan={p.plans[thisMonth] ?? { goals: [] }}
         lastMonth={lastMonth}
         lastPlan={p.plans[lastMonth]}
-        streak={p.streak}
+        run={p.run}
         onFocus={p.onFocus}
       />
       <Hero
         mirror={mirror}
         value={view}
         onChange={setView}
+        trend={trend}
+        shape={shape}
         options={[
           { id: "7", label: "7 days" },
           { id: "30", label: "30 days" },
@@ -94,6 +111,7 @@ export function Overview(p: Props) {
           { id: "last", label: monthName(lastMonth, "short") },
         ]}
       />
+      <Noticing links={links} />
       {mirror.totals.planned > 0 && <Legend />}
       {mirror.rows.map((r) => (
         <Row key={r.id} row={r} compact={dates.length > 7} onPick={p.onPick} onSetup={p.onSetup} />
@@ -109,11 +127,15 @@ function Hero({
   mirror,
   value,
   onChange,
+  trend,
+  shape,
   options,
 }: {
   mirror: ReturnType<typeof buildMirrorOver>;
   value: View;
   onChange: (v: View) => void;
+  trend: Trend | null;
+  shape: ReturnType<typeof weekdayShape>;
   options: { id: View; label: string }[];
 }) {
   const { totals, reasons, startedOn } = mirror;
@@ -151,6 +173,12 @@ function Hero({
             You planned {totals.planned}. You did {totals.done}.
             {totals.gaps > 0 ? ` That leaves ${totals.gaps} ${totals.gaps === 1 ? "gap" : "gaps"}.` : " No gaps."}
           </p>
+          {trend && <p className="mt-1 text-sm text-ink/80">{trend.text}</p>}
+          {shape && (
+            <p className="mt-1 text-sm text-ink/80">
+              {shape.day} are where it slips most: {shape.gaps} of {shape.planned} planned missed.
+            </p>
+          )}
 
           <div className="mt-4 grid grid-cols-3 gap-2">
             <Stat kicker="Reality" value={String(totals.done)} caption={`of ${totals.planned} planned`} />
@@ -194,6 +222,24 @@ function Hero({
           )}
         </>
       )}
+    </section>
+  );
+}
+
+/** Patterns the data shows between sections, in counts, never as a claim about why. */
+function Noticing({ links }: { links: Link[] }) {
+  if (links.length === 0) return null;
+  return (
+    <section className="card p-5">
+      <p className="text-xs font-medium uppercase tracking-wider text-ink/60">Worth noticing</p>
+      <ul className="mt-2 flex flex-col gap-2.5">
+        {links.map((l) => (
+          <li key={l.text} className="text-[15px] leading-snug">
+            {l.text}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[11px] text-ink/60">From your last 90 days. What went together so far, not proof of cause.</p>
     </section>
   );
 }
@@ -358,7 +404,7 @@ function Row({
 function Line({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <dt className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink/50 pt-[3px]">{label}</dt>
+      <dt className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink/50 pt-0.75">{label}</dt>
       <dd className="min-w-0 flex-1 text-ink/90">{children}</dd>
     </div>
   );
@@ -410,16 +456,16 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
 
       <div className="mt-4 rounded-2xl bg-white/70 p-4">
         <div className="flex gap-3">
-          <div className="flex shrink-0 flex-col gap-[5px] pt-[3px] text-[10px] leading-none text-ink/55">
+          <div className="flex shrink-0 flex-col gap-1.25 pt-0.75 text-[10px] leading-none text-ink/55">
             {WEEKDAYS.map((d, i) => (
-              <span key={d} className="flex h-[17px] items-center">
+              <span key={d} className="flex h-4.25 items-center">
                 {i % 2 === 0 ? d : ""}
               </span>
             ))}
           </div>
-          <div className="flex flex-1 justify-center gap-[5px]">
+          <div className="flex flex-1 justify-center gap-1.25">
             {Array.from({ length: WEEKS }, (_, week) => (
-              <div key={week} className="flex flex-col gap-[5px]">
+              <div key={week} className="flex flex-col gap-1.25">
                 {Array.from({ length: 7 }, (_, day) => {
                   const d = days[week * 7 + day];
                   const popped = pulse.date === d;
@@ -436,7 +482,7 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
                       aria-label={`${shortDate(d)}: ${done} of ${planned} planned done`}
                       title={future ? "" : `${shortDate(d)} · ${done}/${planned} planned done`}
                       style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
-                      className={`size-[17px] shrink-0 rounded-[5px] transition-transform ${future ? "invisible" : "hover:scale-110"} ${
+                      className={`size-4.25 shrink-0 rounded-[5px] transition-transform ${future ? "invisible" : "hover:scale-110"} ${
                         popped ? "cell-in" : "rise"
                       } ${d === selected ? "ring-2 ring-ink" : ""}`}
                     />

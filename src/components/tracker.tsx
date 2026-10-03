@@ -12,7 +12,6 @@ import {
   dayDone,
   dayTotal,
   diffData,
-  hasActivity,
   isExpected,
   isScheduled,
   normalizeEntries,
@@ -31,17 +30,18 @@ import {
 } from "@/lib/spec";
 import {
   EMPTY_ENTRY,
-  addDays,
   localKey,
   prettyDate,
   type Entries,
   type Entry,
   type Mood,
 } from "@/lib/tracker";
+import { cleanRun } from "@/lib/insights";
 import { canon, mergeEntries, rollDay, sameEntry } from "@/lib/sync";
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
 import { Journal } from "./journal";
+import { Nudges } from "./nudge";
 import { MissedNudge } from "./missed-nudge";
 import { NoteField } from "./note-field";
 import { Overview } from "./overview";
@@ -61,17 +61,6 @@ type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: n
 type Part = "data" | "mood" | "tags" | "note" | "focus" | "plan";
 const PART_ORDER: Part[] = ["data", "mood", "tags", "note", "focus", "plan"];
 const SYNC_GAP_MS = 15_000; // returning to the app twice in a row shouldn't hit the server twice
-
-function streakOf(entries: Entries, today: string, spec: HabitSpec) {
-  const logged = (d: string) => hasActivity(entries[d], spec);
-  let day = logged(today) ? today : addDays(today, -1);
-  let n = 0;
-  while (logged(day)) {
-    n++;
-    day = addDays(day, -1);
-  }
-  return n;
-}
 
 export function Tracker({
   initialEntries,
@@ -107,6 +96,8 @@ export function Tracker({
   // Bumped when another device changed the day you're looking at, to remount its cards:
   // note boxes read their text only once, so they'd otherwise keep showing the old version.
   const [dayRev, setDayRev] = useState(0);
+  // the hour of day, so Today can say "it's evening" without anyone refreshing
+  const [hour, setHour] = useState(12);
   // Saves that never reached the server ("date|part"). A refresh must never overwrite a day
   // whose only up-to-date copy is on this screen.
   const failed = useRef(new Set<string>());
@@ -134,6 +125,7 @@ export function Tracker({
     const t = localKey(new Date());
     setToday(t);
     setSelected(t);
+    setHour(new Date().getHours());
     lastSync.current = Date.now(); // the server just rendered this page: nothing to catch up on yet
   }, []);
 
@@ -239,7 +231,7 @@ export function Tracker({
         return canon(next) === canon(prev) ? prev : next;
       });
       // Setup keeps its own draft, so don't swap the spec out from under it
-      if (tabRef.current !== "setup" && canon(snap.spec) !== canon(specRef.current)) setSpec(snap.spec);
+      if (snap.spec && tabRef.current !== "setup" && canon(snap.spec) !== canon(specRef.current)) setSpec(snap.spec);
     } catch {
       // offline or a hiccup: stay quiet, the next return to the app tries again
     } finally {
@@ -247,20 +239,27 @@ export function Tracker({
     }
   }
 
-  const live = useRef({ roll, sync });
+  function clock() {
+    setHour(new Date().getHours()); // same value = no re-render
+  }
+
+  const live = useRef({ roll, sync, clock });
   useEffect(() => {
-    live.current = { roll, sync };
+    live.current = { roll, sync, clock };
   });
   useEffect(() => {
     const wake = () => {
       if (document.visibilityState !== "visible") return;
       live.current.roll(true); // coming back: if you were on "today", follow it to the new day
+      live.current.clock();
       void live.current.sync();
     };
     const back = () => void live.current.sync(true);
     // while you're actively in the app past midnight, move "today" but leave you where you are
     const tick = () => {
-      if (document.visibilityState === "visible") live.current.roll(false);
+      if (document.visibilityState !== "visible") return;
+      live.current.roll(false);
+      live.current.clock();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
@@ -487,6 +486,7 @@ export function Tracker({
       ) : tab === "today" ? (
         <div className="flex flex-col gap-4">
           <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={setSelected} />
+          <Nudges spec={spec} entries={entries} today={today} selected={selected} hour={hour} onFill={setSelected} />
 
           {view.sections.map((s, i) => {
             const scheduled = isScheduled(s, selected);
@@ -560,7 +560,7 @@ export function Tracker({
           today={today}
           focuses={focuses}
           plans={plans}
-          streak={streakOf(entries, today, spec)}
+          run={cleanRun(spec, entries, today)}
           selected={selected}
           spec={spec}
           pulse={pulse}

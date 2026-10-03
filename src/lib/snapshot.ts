@@ -6,7 +6,8 @@ import type { getDb } from "./db";
 // Everything the app shows, read in one go. Shared by the first page load and by the quiet
 // refresh that runs when the app comes back to the foreground, so both always agree.
 
-export type Snapshot = { entries: Entries; focuses: Record<string, string>; plans: Record<string, MonthPlan>; spec: HabitSpec };
+/** `spec` is null for a brand-new account that hasn't chosen what to track yet (it sees the welcome screen). */
+export type Snapshot = { entries: Entries; focuses: Record<string, string>; plans: Record<string, MonthPlan>; spec: HabitSpec | null };
 
 const WINDOW_DAYS = 190;
 
@@ -26,13 +27,16 @@ export async function readSnapshot(db: ReturnType<typeof getDb>, userId: string)
   // Sanitized on read, always: guards against a row written by an older/different version of
   // the app. A brand-new user gets the same sanitized default, written once, so what's saved
   // and what's on screen never disagree (otherwise option ids would change on the next load).
-  let spec: HabitSpec;
+  let spec: HabitSpec | null = null;
   if (specRow.data) {
     spec = sanitizeSpec(specRow.data.spec);
-  } else {
+  } else if ((days.data?.length ?? 0) > 0) {
+    // an account that logged days before choosing a setup existed keeps working as it did
     spec = sanitizeSpec(DEFAULT_SPEC);
     await db.from("habit_specs").upsert({ user_id: userId, spec }, { onConflict: "user_id", ignoreDuplicates: true });
   }
+  // otherwise: a new account chooses its own starting point, nothing is assumed for it
+  const forData = spec ?? sanitizeSpec(DEFAULT_SPEC);
 
   const entries: Entries = {};
   for (const r of days.data ?? []) {
@@ -41,7 +45,7 @@ export async function readSnapshot(db: ReturnType<typeof getDb>, userId: string)
       tags: r.tags ?? [],
       note: r.note ?? "",
       // answers recorded under an older id for the same option are read as today's id
-      data: normalizeData(spec, (r.data as Data) ?? {}),
+      data: normalizeData(forData, (r.data as Data) ?? {}),
     };
   }
   const focuses: Record<string, string> = {};

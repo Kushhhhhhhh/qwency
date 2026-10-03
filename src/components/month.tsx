@@ -19,7 +19,7 @@ import {
   type GoalView,
   type MonthPlan,
 } from "@/lib/goals";
-import { FOCUS_MAX, REVIEW_NOTE_MAX, daysInMonth, monthDates, monthName, type Entries } from "@/lib/tracker";
+import { FOCUS_MAX, REVIEW_NOTE_MAX, daysInMonth, monthDates, monthName, shortDate, type Entries } from "@/lib/tracker";
 import { Chip } from "./ui";
 
 // Monthly = direction. The focus line says where you're heading; goals are measured from what
@@ -64,7 +64,7 @@ function GoalRow({ v, onRemove }: { v: GoalView; onRemove: () => void }) {
       <div className="relative mt-2.5 h-2 rounded-full bg-ink/10">
         <div className="h-full rounded-full bg-ink transition-all duration-500" style={{ width: `${Math.round(v.fraction * 100)}%` }} />
         {v.pace !== null && (
-          <i className="absolute -top-[3px] h-[14px] w-[2px] rounded-full bg-ink/60" style={{ left: `${Math.round(v.pace * 100)}%` }} aria-hidden />
+          <i className="absolute -top-0.75 h-3.5 w-0.5 rounded-full bg-ink/60" style={{ left: `${Math.round(v.pace * 100)}%` }} aria-hidden />
         )}
       </div>
       <p className="mt-1.5 text-xs text-ink/80">
@@ -221,7 +221,7 @@ export function MonthCard({
   plan,
   lastMonth,
   lastPlan,
-  streak,
+  run,
   onFocus,
   ...c
 }: Common & {
@@ -230,7 +230,8 @@ export function MonthCard({
   plan: MonthPlan;
   lastMonth: string;
   lastPlan: MonthPlan | undefined;
-  streak: number;
+  /** days in a row with nothing missed (see cleanRun), and the last day that broke it */
+  run: { days: number; brokeOn: string | null };
   onFocus: (month: string, text: string) => void;
 }) {
   const { entries, today, spec, onPlan } = c;
@@ -240,7 +241,7 @@ export function MonthCard({
   const dayOfMonth = Number(today.slice(8));
   const keys = monthDates(month);
   const logged = keys.filter((k) => hasActivity(entries[k], spec)).length;
-  const next = MILESTONES.find((m) => m > streak);
+  const next = MILESTONES.find((m) => m > run.days);
 
   const views = goalViews(spec, entries, month, today, plan.goals);
   // goals whose section or question has since been removed aren't shown, so don't let them
@@ -312,10 +313,12 @@ export function MonthCard({
           <b className="text-xl font-semibold tabular-nums">{logged}</b>
           <span className="text-ink/75"> / {dayOfMonth} days logged</span>
         </span>
-        <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-semibold">{streak > 0 ? `${streak}-day streak` : "No streak yet"}</span>
+        <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-semibold">
+          {run.days > 0 ? `${run.days} ${run.days === 1 ? "day" : "days"} without a gap` : run.brokeOn ? "Fresh start" : "No run yet"}
+        </span>
       </div>
 
-      <div className="mt-3 flex h-2 gap-[2px]">
+      <div className="mt-3 flex h-2 gap-0.5">
         {keys.map((k) => {
           const e = entries[k];
           const then = specAt(spec, k);
@@ -335,7 +338,14 @@ export function MonthCard({
           );
         })}
       </div>
-      {streak > 0 && next && <p className="mt-3 text-xs text-ink/70">{next - streak} more days to a {next}-day streak.</p>}
+      {run.days > 0 && next && (
+        <p className="mt-3 text-xs text-ink/70">
+          {next - run.days} more {next - run.days === 1 ? "day" : "days"} to {next} without a gap.
+        </p>
+      )}
+      {run.days === 0 && run.brokeOn && (
+        <p className="mt-3 text-xs text-ink/70">The last gap was {shortDate(run.brokeOn)}. Today can start a new run.</p>
+      )}
     </section>
   );
 }

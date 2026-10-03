@@ -133,3 +133,23 @@ window also takes calendar months (`buildMirrorOver`), so "Sep" shows September 
 Goals and the review live in one new column, `month_focus.plan` (JSON). Run `supabase/schema.sql`
 again once: it adds the column and is safe to re-run. Until then the app still loads (the page reads
 every column, so a missing one just means no goals yet) but saving goals fails.
+
+## The daily loop and first impressions
+
+- **Catch-up and "still open"** (`src/components/nudge.tsx`, `catchUp` / `openToday` in
+  `src/lib/insights.ts`): on Today, a quiet line when yesterday had planned sections you never logged
+  (one tap goes to that day; dismissing is remembered for the day), and after 8pm a line with what's
+  still open today. Both read the same mirror as Patterns.
+- **The streak is "days without a gap"** (`cleanRun`): everything planned done and nothing slipped,
+  the day verdict included. Opening the app on a day of skipped sections doesn't extend it.
+- **Patterns says more, carefully** (all in `src/lib/insights.ts`, all derived, nothing new to log):
+  how this window compares with the one before (skipped when the earlier window began before you
+  did), the weekday that slips clearly more than the rest (needs about a month), and "worth
+  noticing": when X slips, Y tends to (last 90 days, same-day only, at least 4 slips and 6 clean
+  days to compare, a 35-point difference). It reports counts, never a cause.
+- **First run** (`src/components/welcome.tsx`, `src/lib/templates.ts`): a new account isn't seeded
+  with anyone's setup; it picks from nine starting points, each already saying what counts as a slip.
+  Accounts that already have logged days keep working as before.
+- **Installable**: `src/app/manifest.ts` and the icons in `public/` let a phone add Qwency to the
+  home screen and open it like an app. `error.tsx` and `loading.tsx` replace the raw error page and
+  the blank wait.

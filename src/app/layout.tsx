@@ -12,6 +12,8 @@ const DESCRIPTION = "Tap in your day: sleep, work, gym, skin, spending and mood.
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   applicationName: NAME,
+  // opens like an app when added to an iPhone home screen (Android uses the manifest)
+  appleWebApp: { capable: true, title: NAME, statusBarStyle: "default" },
   title: { default: `${NAME} | Daily behavior tracker`, template: `%s | ${NAME}` },
   description: DESCRIPTION,
   keywords: ["daily tracker", "habit tracker", "behavior analytics", "self awareness"],
