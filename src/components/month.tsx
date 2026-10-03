@@ -62,7 +62,7 @@ function GoalRow({ v, onRemove }: { v: GoalView; onRemove: () => void }) {
       </div>
       {/* the bar is how much you've done; the tick is where the month says you should be */}
       <div className="relative mt-2.5 h-2 rounded-full bg-ink/10">
-        <div className="h-full rounded-full bg-ink transition-all duration-500" style={{ width: `${Math.round(v.fraction * 100)}%` }} />
+        <div className="h-full rounded-full bg-ink transition-[width] duration-500" style={{ width: `${Math.round(v.fraction * 100)}%` }} />
         {v.pace !== null && (
           <i className="absolute -top-0.75 h-3.5 w-0.5 rounded-full bg-ink/60" style={{ left: `${Math.round(v.pace * 100)}%` }} aria-hidden />
         )}

@@ -27,14 +27,38 @@ export function canon(v: unknown, ...skip: string[]): string {
   );
 }
 
-export const sameEntry = (a: Entry | undefined, b: Entry | undefined) => canon(a ?? EMPTY_ENTRY) === canon(b ?? EMPTY_ENTRY);
+/**
+ * Same data, whatever order the keys came in (a missing key and an `undefined` one are the same).
+ * Answers the same question as comparing two `canon()` strings, without building and sorting a
+ * string for every object, which is what makes checking a whole window of days cheap.
+ */
+export function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => same(v, b[i]));
+  }
+  const x = a as Record<string, unknown>;
+  const y = b as Record<string, unknown>;
+  for (const k in x) if (x[k] !== undefined && !same(x[k], y[k])) return false;
+  for (const k in y) if (y[k] !== undefined && x[k] === undefined) return false;
+  return true;
+}
+
+export const sameEntry = (a: Entry | undefined, b: Entry | undefined) => same(a ?? EMPTY_ENTRY, b ?? EMPTY_ENTRY);
 
 /**
  * Fold a fresh read from the server into what's on screen. The server wins, except for days in
  * `keep`: days whose last save failed, where this screen holds the only copy of what you logged.
+ * When nothing actually differs this returns `local` itself (and a day that didn't change keeps its
+ * object), so the screen can tell "nothing new" with a plain `===` and skips re-drawing those days.
  */
 export function mergeEntries(local: Entries, remote: Entries, keep: ReadonlySet<string>): Entries {
-  const out: Entries = { ...local, ...remote };
-  for (const d of keep) if (local[d]) out[d] = local[d];
-  return out;
+  let out: Entries | null = null;
+  for (const d of Object.keys(remote)) {
+    if (keep.has(d) && local[d]) continue; // the only up-to-date copy is on this screen
+    if (local[d] && same(local[d], remote[d])) continue; // nothing new for that day
+    (out ??= { ...local })[d] = remote[d];
+  }
+  return out ?? local;
 }

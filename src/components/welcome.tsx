@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
 import { Check } from "lucide-react";
 import { saveSpec } from "@/app/actions";
 import { DEFAULT_SPEC, LIMITS, scheduleLabel, type HabitSpec } from "@/lib/spec";
 import { TEMPLATES, buildStarter } from "@/lib/templates";
 import { iconFor } from "@/lib/icons";
 import { localKey } from "@/lib/tracker";
+import { UserMenu } from "./user-menu";
 
 /**
  * The first thing a new account sees. It doesn't inherit anyone's setup: it picks the parts of
@@ -47,9 +47,7 @@ export function Welcome() {
     <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-36 pt-6">
       <header className="mb-8 flex items-center justify-between">
         <p className="text-sm font-semibold tracking-tight">Qwency</p>
-        <UserButton
-          appearance={{ elements: { avatarBox: { width: 40, height: 40, boxShadow: "0 0 0 2px rgb(80 78 118 / 0.15)" } } }}
-        />
+        <UserMenu size={40} />
       </header>
 
       <p className="text-xs font-medium uppercase tracking-wider text-ink/60">Welcome</p>
@@ -71,7 +69,7 @@ export function Welcome() {
                 aria-pressed={on}
                 disabled={blocked}
                 onClick={() => toggle(t.id)}
-                className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left transition-all duration-200 active:scale-[0.98] disabled:opacity-40 ${
+                className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-[0.98] disabled:opacity-40 ${
                   on ? "border-transparent bg-ink text-cream shadow-lg shadow-ink/25" : "chip"
                 }`}
               >
@@ -129,7 +127,7 @@ export function Welcome() {
           type="button"
           disabled={picked.length === 0 || saving}
           onClick={() => start(buildStarter(picked))}
-          className="rounded-full bg-ink px-7 py-3 text-sm font-semibold text-cream shadow-xl shadow-ink/30 transition-all duration-200 active:scale-95 disabled:opacity-50"
+          className="rounded-full bg-ink px-7 py-3 text-sm font-semibold text-cream shadow-xl shadow-ink/30 transition-[transform,opacity] duration-200 active:scale-95 disabled:opacity-50"
         >
           {saving ? "Setting up…" : picked.length === 0 ? "Pick at least one" : `Start with ${picked.length}`}
         </button>

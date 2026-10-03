@@ -16,6 +16,8 @@ export default function manifest(): MetadataRoute.Manifest {
     icons: [
       { src: "/pwa-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/pwa-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      // artwork inset in the safe area, so a round or squircle crop doesn't cut into it
+      { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

@@ -9,10 +9,12 @@ import type { getDb } from "./db";
 /** `spec` is null for a brand-new account that hasn't chosen what to track yet (it sees the welcome screen). */
 export type Snapshot = { entries: Entries; focuses: Record<string, string>; plans: Record<string, MonthPlan>; spec: HabitSpec | null };
 
-const WINDOW_DAYS = 190;
+export const WINDOW_DAYS = 190;
+/** How far back a quick refresh reaches: recent enough to catch what another device just logged. */
+export const RECENT_DAYS = 35;
 
-export async function readSnapshot(db: ReturnType<typeof getDb>, userId: string): Promise<Snapshot> {
-  const since = addDays(localKey(new Date()), -WINDOW_DAYS);
+export async function readSnapshot(db: ReturnType<typeof getDb>, userId: string, reach: number = WINDOW_DAYS): Promise<Snapshot> {
+  const since = addDays(localKey(new Date()), -reach);
   const [days, focus, specRow] = await Promise.all([
     db.from("day_entries").select("entry_date, mood, tags, note, data").eq("user_id", userId).gte("entry_date", since),
     // everything, so a database that hasn't added the `plan` column yet still loads (plans just read as empty)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { Frown, Meh, Search, Smile } from "lucide-react";
 import { MOODS, WHY_TAGS, prettyDate, type Entries, type Entry, type Mood } from "@/lib/tracker";
 import { sectionNoteKey, type HabitSpec } from "@/lib/spec";
@@ -16,10 +16,14 @@ const MOOD_ICON = { good: Smile, meh: Meh, bad: Frown };
 const MOOD_TEXT: Record<Mood, string> = { good: "text-good", meh: "text-meh", bad: "text-bad" };
 const WHY_LABEL = new Map<string, string>(WHY_TAGS.map((t) => [t.id, t.label]));
 
+// Long histories are shown a page at a time: a year of notes is hundreds of cards, and drawing them
+// all at once is what makes the tab slow to open and to search.
+const PAGE = 30;
+
 type Item = {
   date: string;
   entry: Entry;
-  source: { kind: "day" } | { kind: "section"; title: string; icon: string };
+  source: { kind: "day" } | { kind: "section"; id: string; title: string; icon: string };
   text: string;
 };
 
@@ -34,6 +38,9 @@ export function Journal({
 }) {
   const [query, setQuery] = useState("");
   const [mood, setMood] = useState<Mood | "all">("all");
+  const [limit, setLimit] = useState(PAGE);
+  // typing stays instant; the list catches up a moment later
+  const search = useDeferredValue(query);
 
   const all = useMemo<Item[]>(() => {
     const out: Item[] = [];
@@ -44,18 +51,20 @@ export function Journal({
       for (const s of spec.sections) {
         const t = entry.data[sectionNoteKey(s.id)];
         if (typeof t === "string" && t.trim().length > 0) {
-          out.push({ date, entry, source: { kind: "section", title: s.title, icon: s.icon }, text: t });
+          out.push({ date, entry, source: { kind: "section", id: s.id, title: s.title, icon: s.icon }, text: t });
         }
       }
     }
     return out.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
   }, [entries, spec]);
 
-  const shown = all.filter((it) => {
+  const needle = search.trim().toLowerCase();
+  const matching = all.filter((it) => {
     if (mood !== "all" && it.entry.mood !== mood) return false;
-    if (query.trim() && !it.text.toLowerCase().includes(query.trim().toLowerCase())) return false;
+    if (needle && !it.text.toLowerCase().includes(needle)) return false;
     return true;
   });
+  const shown = matching.slice(0, limit);
 
   return (
     <div className="flex flex-col gap-4">
@@ -74,7 +83,10 @@ export function Journal({
               <Search size={15} className="shrink-0 text-ink/50" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setLimit(PAGE);
+                }}
                 placeholder="Search your notes"
                 className="w-full bg-transparent text-sm outline-none placeholder:text-ink/45"
               />
@@ -88,7 +100,10 @@ export function Journal({
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setMood(id)}
+                    onClick={() => {
+                      setMood(id);
+                      setLimit(PAGE);
+                    }}
                     aria-pressed={on}
                     className={`chip rounded-full px-3 py-1.5 text-xs font-medium ${on ? "bg-ink text-cream" : "text-ink"}`}
                   >
@@ -101,20 +116,21 @@ export function Journal({
         )}
       </section>
 
-      {all.length > 0 && shown.length === 0 && (
+      {all.length > 0 && matching.length === 0 && (
         <p className="px-1 text-sm text-ink/60">Nothing matches "{query}".</p>
       )}
 
       <div className="flex flex-col gap-3">
-        {shown.map((it, idx) => {
+        {shown.map((it) => {
           const MoodIcon = it.entry.mood ? MOOD_ICON[it.entry.mood] : null;
           const SectionIcon = it.source.kind === "section" ? iconFor(it.source.icon) : null;
           return (
             <button
-              key={`${it.date}-${it.source.kind === "section" ? it.source.title : "day"}-${idx}`}
+              key={`${it.date}|${it.source.kind === "section" ? it.source.id : "day"}`}
               type="button"
               onClick={() => onPick(it.date)}
-              className="card rise p-4 text-left transition-transform active:scale-[0.99]"
+              // off-screen cards aren't laid out or painted until they scroll near
+              className="card rise p-4 text-left transition-transform [contain-intrinsic-size:auto_6rem] [content-visibility:auto] active:scale-[0.99]"
             >
               <div className="flex flex-wrap items-center gap-2 text-xs text-ink/60">
                 {MoodIcon && <MoodIcon size={15} strokeWidth={2} className={MOOD_TEXT[it.entry.mood!]} />}
@@ -140,6 +156,16 @@ export function Journal({
           );
         })}
       </div>
+
+      {matching.length > shown.length && (
+        <button
+          type="button"
+          onClick={() => setLimit((n) => n + PAGE)}
+          className="chip self-center rounded-full px-5 py-2 text-sm font-medium"
+        >
+          Show more ({matching.length - shown.length} older)
+        </button>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { buildMirrorOver, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
-import { findLinks, trendLine, weekdayShape, type Link, type Trend } from "@/lib/insights";
+import { cleanRun, findLinks, trendLine, weekdayShape, type Link, type Trend } from "@/lib/insights";
 import type { MonthPlan } from "@/lib/goals";
 import { iconFor } from "@/lib/icons";
 import {
@@ -32,7 +32,6 @@ type Props = {
   today: string;
   focuses: Record<string, string>;
   plans: Record<string, MonthPlan>;
-  run: { days: number; brokeOn: string | null };
   selected: string;
   spec: HabitSpec;
   pulse: { date: string; n: number };
@@ -77,9 +76,12 @@ export function Overview(p: Props) {
         : view === "this"
           ? { dates: monthDates(lastMonth).slice(0, dates.length), label: `${monthName(lastMonth)} at this point` }
           : { dates: monthDates(addMonths(lastMonth, -1)), label: monthName(addMonths(lastMonth, -1)) };
-  const trend = trendLine(p.spec, p.entries, p.today, dates, earlier.dates, earlier.label);
+  const trend = trendLine(p.spec, p.entries, p.today, dates, earlier.dates, earlier.label, mirror);
   const shape = weekdayShape(mirror);
-  const links = findLinks(p.spec, p.entries, p.today);
+  // the last 90 days are read three ways (the run without a gap, what goes with what): built once
+  const m90 = buildMirrorOver(p.spec, p.entries, p.today, trailing(90));
+  const run = cleanRun(p.spec, p.entries, p.today, 90, m90);
+  const links = findLinks(p.spec, p.entries, p.today, 90, 2, m90);
 
   const common = { entries: p.entries, today: p.today, spec: p.spec, onPlan: p.onPlan };
   // a month that just ended is looked at for its first ten days, if it had a plan worth looking back at
@@ -95,7 +97,7 @@ export function Overview(p: Props) {
         plan={p.plans[thisMonth] ?? { goals: [] }}
         lastMonth={lastMonth}
         lastPlan={p.plans[lastMonth]}
-        run={p.run}
+        run={run}
         onFocus={p.onFocus}
       />
       <Hero

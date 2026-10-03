@@ -22,6 +22,7 @@ import {
 import { WEEKDAYS, localKey } from "@/lib/tracker";
 import { ICON_IDS, iconFor } from "@/lib/icons";
 import { canon } from "@/lib/sync";
+import { Fold } from "./fold";
 import { Chip } from "./ui";
 
 type Save = "idle" | "saving" | "saved" | "error";
@@ -249,8 +250,8 @@ function SectionEditor({
         <ChevronDown size={18} className={`shrink-0 text-ink/50 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
-      <div className="fold" data-open={isOpen} inert={!isOpen}>
-        <div>
+      {/* built the first time it opens: a closed section costs one empty box, not a whole editor */}
+      <Fold open={isOpen}>
           <div className="px-5 pb-5">
             <div className="flex items-start gap-3 border-t border-ink/10 pt-4">
               <IconPicker value={section.icon} onChange={(icon) => onChange({ icon })} />
@@ -309,8 +310,7 @@ function SectionEditor({
               </div>
             </div>
           </div>
-        </div>
-      </div>
+      </Fold>
     </section>
   );
 }
@@ -646,7 +646,7 @@ function TonePicker({ value, onChange }: { value: Tone | undefined; onChange: (t
             aria-label={o.label}
             aria-pressed={on}
             onClick={() => onChange(o.id === "none" ? undefined : o.id)}
-            className={`size-6 rounded-full transition-all ${o.swatch} ${on ? "scale-110 ring-2 ring-ink ring-offset-1 ring-offset-white" : "opacity-50 hover:opacity-90"}`}
+            className={`size-6 rounded-full transition-[transform,opacity,box-shadow] ${o.swatch} ${on ? "scale-110 ring-2 ring-ink ring-offset-1 ring-offset-white" : "opacity-50 hover:opacity-90"}`}
           />
         );
       })}

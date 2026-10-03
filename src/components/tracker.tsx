@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { UserButton } from "@clerk/nextjs";
-import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
+import { Suspense, startTransition, use, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import dynamic from "next/dynamic";
 import { loadSnapshot, patchData, saveFocus, saveNote, savePlan, saveSpec, saveTags, setMood } from "@/app/actions";
 import { EMPTY_PLAN, type MonthPlan } from "@/lib/goals";
 import {
@@ -36,18 +35,20 @@ import {
   type Entry,
   type Mood,
 } from "@/lib/tracker";
-import { cleanRun } from "@/lib/insights";
-import { canon, mergeEntries, rollDay, sameEntry } from "@/lib/sync";
+import { TZ_COOKIE } from "@/lib/clock";
+import { whenIdle } from "@/lib/idle";
+import { useStable } from "@/lib/use-stable";
+import { RECENT_DAYS, type Snapshot } from "@/lib/snapshot";
+import { mergeEntries, rollDay, same, sameEntry } from "@/lib/sync";
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
-import { Journal } from "./journal";
 import { Nudges } from "./nudge";
 import { MissedNudge } from "./missed-nudge";
 import { NoteField } from "./note-field";
-import { Overview } from "./overview";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
-import { Setup } from "./setup";
+import { Nav, TabSkeleton, TodayShell, type Tab } from "./shell";
 import { ProgressRing } from "./ui";
+import { UserMenu } from "./user-menu";
 
 const CHEERS: Record<Mood, string[]> = {
   good: ["Locked in.", "Good day, logged.", "Stacking wins."],
@@ -55,37 +56,139 @@ const CHEERS: Record<Mood, string[]> = {
   bad: ["Logged. Now name the cause.", "Rough days are data too."],
 };
 
+// Only Today is on screen at first, so the other tabs' code isn't downloaded or run until it's wanted
+// (or the browser is idle, or a finger is heading for the tab). They are never drawn by the server.
+const loaders = {
+  patterns: () => import("./overview"),
+  journal: () => import("./journal"),
+  setup: () => import("./setup"),
+};
+const Overview = dynamic(() => loaders.patterns().then((m) => m.Overview), { loading: () => <TabSkeleton /> });
+const Journal = dynamic(() => loaders.journal().then((m) => m.Journal), { loading: () => <TabSkeleton /> });
+const Setup = dynamic(() => loaders.setup().then((m) => m.Setup), { loading: () => <TabSkeleton /> });
+const Welcome = dynamic(() => import("./welcome").then((m) => m.Welcome));
+
+function warm(tab: Tab) {
+  if (tab !== "today") void loaders[tab]();
+}
+
+/** Remember the browser's time zone, so the server can draw the right day next time. */
+function rememberZone() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const value = encodeURIComponent(zone ?? "");
+  if (!zone || document.cookie.includes(`${TZ_COOKIE}=${value}`)) return;
+  document.cookie = `${TZ_COOKIE}=${value}; path=/; max-age=31536000; samesite=lax`;
+}
+
 type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
+type ToastApi = { say: (kind: Status["kind"], text: string) => void };
+
+/** The little "Saving..." / "Saved" pill. It holds its own state, so each blink of it costs one tiny render instead of the whole screen. */
+function Toast({ api }: { api: Ref<ToastApi> }) {
+  const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useImperativeHandle(
+    api,
+    () => ({
+      say(kind, text) {
+        if (timer.current) clearTimeout(timer.current);
+        setStatus((st) => ({ kind, text, id: st.id + 1 }));
+        if (kind === "saved") timer.current = setTimeout(() => setStatus((st) => ({ ...st, kind: "idle" })), 1600);
+      },
+    }),
+    [],
+  );
+  if (status.kind === "idle") return null;
+  return (
+    <div
+      key={status.id}
+      role="status"
+      className={`toast-in fixed bottom-24 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow-lg shadow-ink/20 ${
+        status.kind === "error"
+          ? "bg-bad text-[#2b2946]"
+          : status.kind === "saved"
+            ? "bg-ink text-cream"
+            : "bg-white text-ink"
+      }`}
+    >
+      {status.text}
+    </div>
+  );
+}
 
 // Which piece of a day a save was for, so a failed one can be re-sent on its own later.
 type Part = "data" | "mood" | "tags" | "note" | "focus" | "plan";
 const PART_ORDER: Part[] = ["data", "mood", "tags", "note", "focus", "plan"];
 const SYNC_GAP_MS = 15_000; // returning to the app twice in a row shouldn't hit the server twice
 
+/**
+ * The page hands over the database read as a promise instead of waiting for it. The heading, date
+ * and shape of Today are on screen straight away; your days drop into the same places when they arrive.
+ */
 export function Tracker({
+  snapshot,
+  today,
+  hour,
+  dismissed,
+}: {
+  snapshot: Promise<Snapshot>;
+  today: string;
+  hour: number;
+  dismissed: string[];
+}) {
+  return (
+    <Suspense fallback={<TodayShell dateText={prettyDate(today)} />}>
+      <TrackerLoaded snapshot={snapshot} today={today} hour={hour} dismissed={dismissed} />
+    </Suspense>
+  );
+}
+
+function TrackerLoaded({ snapshot, today, hour, dismissed }: { snapshot: Promise<Snapshot>; today: string; hour: number; dismissed: string[] }) {
+  const snap = use(snapshot);
+  if (!snap.spec) return <Welcome />; // a new account picks what to track before anything else
+  return (
+    <TrackerView
+      initialEntries={snap.entries}
+      initialFocus={snap.focuses}
+      initialPlans={snap.plans}
+      initialSpec={snap.spec}
+      initialToday={today}
+      initialHour={hour}
+      dismissed={dismissed}
+    />
+  );
+}
+
+function TrackerView({
   initialEntries,
   initialFocus,
   initialPlans,
   initialSpec,
+  initialToday,
+  initialHour,
+  dismissed,
 }: {
   initialEntries: Entries;
   initialFocus: Record<string, string>;
   initialPlans: Record<string, MonthPlan>;
   initialSpec: HabitSpec;
+  initialToday: string;
+  initialHour: number;
+  dismissed: string[];
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [focuses, setFocuses] = useState(initialFocus);
   const [plans, setPlans] = useState(initialPlans);
   const [spec, setSpec] = useState(initialSpec);
-  // "today" is the browser's calendar day, so it is only known after mount
-  const [today, setToday] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // The server drew Today for the day it believes it is where you are. On arrival the browser's own
+  // calendar wins (see the mount effect), so a wrong guess is corrected, never trusted.
+  const [today, setToday] = useState(initialToday);
+  const [selected, setSelected] = useState(initialToday);
   const [tab, setTab] = useState<"today" | "patterns" | "journal" | "setup">("today");
   // a Patterns row can send you to its section in Setup, already open
   const [setupFocus, setSetupFocus] = useState<string | null>(null);
   const [pulse, setPulse] = useState({ date: "", n: 0 });
-  const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
-  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toast = useRef<ToastApi>(null);
   // Debounced note saves fire later than the render that created them, so they read the
   // latest entries from here rather than from a stale closure.
   const entriesRef = useRef(entries);
@@ -97,7 +200,7 @@ export function Tracker({
   // note boxes read their text only once, so they'd otherwise keep showing the old version.
   const [dayRev, setDayRev] = useState(0);
   // the hour of day, so Today can say "it's evening" without anyone refreshing
-  const [hour, setHour] = useState(12);
+  const [hour, setHour] = useState(initialHour);
   // Saves that never reached the server ("date|part"). A refresh must never overwrite a day
   // whose only up-to-date copy is on this screen.
   const failed = useRef(new Set<string>());
@@ -106,8 +209,8 @@ export function Tracker({
   const syncing = useRef(false);
   const lastSync = useRef(0);
   // the latest values, for handlers that outlive a single render (focus / visibility listeners)
-  const todayRef = useRef<string | null>(null);
-  const selectedRef = useRef<string | null>(null);
+  const todayRef = useRef(initialToday);
+  const selectedRef = useRef(initialToday);
   const tabRef = useRef(tab);
   const specRef = useRef(spec);
   const focusRef = useRef(focuses);
@@ -122,11 +225,27 @@ export function Tracker({
   }, [today, selected, tab, spec, focuses, plans]);
 
   useEffect(() => {
-    const t = localKey(new Date());
-    setToday(t);
-    setSelected(t);
-    setHour(new Date().getHours());
+    const now = new Date();
+    const t = localKey(now);
+    if (t !== todayRef.current) {
+      // the server's guess about your day was off (travel, a VPN): the browser knows better
+      todayRef.current = t;
+      selectedRef.current = t;
+      setToday(t);
+      setSelected(t);
+    }
+    setHour(now.getHours());
+    rememberZone();
     lastSync.current = Date.now(); // the server just rendered this page: nothing to catch up on yet
+
+    // once the page has settled, fetch the other tabs' code quietly so the first visit to each is instant
+    const go = () => (["patterns", "journal", "setup"] as const).forEach(warm);
+    let cancel = () => {};
+    const timer = window.setTimeout(() => (cancel = whenIdle(go, 4000)), 2500);
+    return () => {
+      window.clearTimeout(timer);
+      cancel();
+    };
   }, []);
 
   /** Every change to what's on screen goes through here, so a refresh can tell the screen moved on. */
@@ -182,61 +301,74 @@ export function Tracker({
         ok = (await job()).ok;
       } catch {
         ok = false;
-      } finally {
-        pending.current--;
       }
+      pending.current--;
       if (!ok) return; // still offline: stop here instead of hammering
       failed.current.delete(fk);
     }
   }
 
-  /** Quietly fold the server's current state into the screen. Never throws away unsaved work. */
+  /** Fold a fresh read into the screen. The rules for what wins live in lib/sync; unsaved work is never thrown away. */
+  function applySnapshot(snap: Snapshot) {
+    const keep = new Set([...failed.current].map((f) => f.split("|")[0]));
+    const local = entriesRef.current;
+    const merged = mergeEntries(local, snap.entries, keep); // `local` itself when nothing changed
+    const sel = selectedRef.current;
+    if (sel && !sameEntry(local[sel], merged[sel])) setDayRev((r) => r + 1);
+    if (merged !== local) setEntries(merged); // not `mutate`: this isn't a local edit
+    setFocuses((prev) => {
+      const next = { ...prev, ...snap.focuses };
+      for (const k of keep) {
+        if (k.startsWith("focus:")) {
+          const month = k.slice("focus:".length);
+          if (month in prev) next[month] = prev[month];
+        }
+      }
+      return same(next, prev) ? prev : next;
+    });
+    setPlans((prev) => {
+      const next = { ...prev, ...snap.plans };
+      for (const k of keep) {
+        if (k.startsWith("plan:")) {
+          const month = k.slice("plan:".length);
+          if (month in prev) next[month] = prev[month];
+        }
+      }
+      return same(next, prev) ? prev : next;
+    });
+    // Setup keeps its own draft, so don't swap the spec out from under it
+    if (snap.spec && tabRef.current !== "setup" && !same(snap.spec, specRef.current)) setSpec(snap.spec);
+  }
+
+  /** One refresh. Never throws: offline or a hiccup just means the next return to the app tries again. */
+  async function syncOnce(days?: number) {
+    let snap: Snapshot | null = null;
+    let seen = 0;
+    try {
+      await flushFailed();
+      if (pending.current > 0) return;
+      seen = mutations.current;
+      snap = await loadSnapshot(days);
+    } catch {
+      return;
+    }
+    // anything done on this screen while that read was out makes it stale: leave the screen alone
+    if (!snap || mutations.current !== seen || pending.current > 0) return;
+    lastSync.current = Date.now();
+    try {
+      applySnapshot(snap);
+    } catch {
+      // a read that doesn't fit what's on screen: ignore it
+    }
+  }
+
+  /** Quietly catch up with the server. Coming back to the app asks for the recent weeks only; `force` (back online) rereads everything. */
   async function sync(force = false) {
     if (syncing.current) return;
     if (!force && Date.now() - lastSync.current < SYNC_GAP_MS) return;
     syncing.current = true;
-    try {
-      await flushFailed();
-      if (pending.current > 0) return;
-      const seen = mutations.current;
-      const snap = await loadSnapshot();
-      // anything done on this screen while that read was out makes it stale: leave the screen alone
-      if (!snap || mutations.current !== seen || pending.current > 0) return;
-      lastSync.current = Date.now();
-
-      const keep = new Set([...failed.current].map((f) => f.split("|")[0]));
-      const local = entriesRef.current;
-      const merged = mergeEntries(local, snap.entries, keep);
-      const sel = selectedRef.current;
-      if (sel && !sameEntry(local[sel], merged[sel])) setDayRev((r) => r + 1);
-      if (canon(merged) !== canon(local)) setEntries(merged); // not `mutate`: this isn't a local edit
-      setFocuses((prev) => {
-        const next = { ...prev, ...snap.focuses };
-        for (const k of keep) {
-          if (k.startsWith("focus:")) {
-            const month = k.slice("focus:".length);
-            if (month in prev) next[month] = prev[month];
-          }
-        }
-        return canon(next) === canon(prev) ? prev : next;
-      });
-      setPlans((prev) => {
-        const next = { ...prev, ...snap.plans };
-        for (const k of keep) {
-          if (k.startsWith("plan:")) {
-            const month = k.slice("plan:".length);
-            if (month in prev) next[month] = prev[month];
-          }
-        }
-        return canon(next) === canon(prev) ? prev : next;
-      });
-      // Setup keeps its own draft, so don't swap the spec out from under it
-      if (snap.spec && tabRef.current !== "setup" && canon(snap.spec) !== canon(specRef.current)) setSpec(snap.spec);
-    } catch {
-      // offline or a hiccup: stay quiet, the next return to the app tries again
-    } finally {
-      syncing.current = false;
-    }
+    await syncOnce(force ? undefined : RECENT_DAYS);
+    syncing.current = false;
   }
 
   function clock() {
@@ -277,11 +409,7 @@ export function Tracker({
 
   // ---- saving: UI updates first, server catches up in the background ----
   function say(kind: Status["kind"], text: string) {
-    if (clearTimer.current) clearTimeout(clearTimer.current);
-    setStatus((s) => ({ kind, text, id: s.id + 1 }));
-    if (kind === "saved") {
-      clearTimer.current = setTimeout(() => setStatus((s) => ({ ...s, kind: "idle" })), 1600);
-    }
+    toast.current?.say(kind, text);
   }
 
   // Every save goes through here. It counts what's in flight (a refresh waits for it) and
@@ -294,9 +422,8 @@ export function Tracker({
       ok = (await job()).ok;
     } catch {
       ok = false;
-    } finally {
-      pending.current--;
     }
+    pending.current--;
     if (!ok && part) failed.current.add(`${key}|${part}`);
     return ok;
   }
@@ -437,6 +564,15 @@ export function Tracker({
     persistQuiet(`plan:${month}`, "plan", () => savePlan(month, plan));
   }
 
+  // FieldView skips re-drawing unless its own answer changed, which only works if the handlers it is
+  // given keep the same identity (they still run the latest code when called).
+  const onField = useStable(setField);
+  const onWhy = useStable(pickWhy);
+  const onCustom = useStable(addCustom);
+
+  // Moving to another day is not urgent: the tap answers at once and the day follows
+  const pickDay = (d: string) => startTransition(() => setSelected(d));
+
   const entry = selected ? (entries[selected] ?? EMPTY_ENTRY) : EMPTY_ENTRY;
   const started = today ? (startedOn(entries, spec) ?? today) : "";
   // the selected day, as the rules stood then (schedule, what counts as a slip, goals, targets)
@@ -466,27 +602,19 @@ export function Tracker({
                   ? "Make it yours"
                   : selected
                     ? prettyDate(selected)
-                    : " "}
+                    : " "}
           </p>
         </div>
         {tab === "today" && selected && (
           <ProgressRing value={dayDone(entry, selected, view)} total={dayTotal(view, selected)} />
         )}
-        <UserButton
-          appearance={{
-            elements: {
-              avatarBox: { width: 48, height: 48, boxShadow: "0 0 0 2px rgb(80 78 118 / 0.15)" },
-            },
-          }}
-        />
+        <UserMenu size={48} />
       </header>
 
-      {!today || !selected ? (
-        <div className="card p-10 text-center text-sm text-ink/60">Loading…</div>
-      ) : tab === "today" ? (
+      {tab === "today" ? (
         <div className="flex flex-col gap-4">
-          <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={setSelected} />
-          <Nudges spec={spec} entries={entries} today={today} selected={selected} hour={hour} onFill={setSelected} />
+          <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={pickDay} />
+          <Nudges spec={spec} entries={entries} today={today} selected={selected} hour={hour} dismissed={dismissed} onFill={pickDay} />
 
           {view.sections.map((s, i) => {
             const scheduled = isScheduled(s, selected);
@@ -517,9 +645,9 @@ export function Tracker({
                     data={entry.data}
                     askWhy={askKey === f.key}
                     split={breakdownOf(view, f)}
-                    onChange={setField}
-                    onWhy={pickWhy}
-                    onCustom={addCustom}
+                    onChange={onField}
+                    onWhy={onWhy}
+                    onCustom={onCustom}
                   />
                 ))}
                 {missed && (
@@ -560,7 +688,6 @@ export function Tracker({
           today={today}
           focuses={focuses}
           plans={plans}
-          run={cleanRun(spec, entries, today)}
           selected={selected}
           spec={spec}
           pulse={pulse}
@@ -591,49 +718,16 @@ export function Tracker({
         <Setup spec={spec} onSave={saveSetup} openId={setupFocus} />
       )}
 
-      {status.kind !== "idle" && (
-        <div
-          key={status.id}
-          role="status"
-          className={`toast-in fixed bottom-24 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow-lg shadow-ink/20 ${
-            status.kind === "error"
-              ? "bg-bad text-[#2b2946]"
-              : status.kind === "saved"
-                ? "bg-ink text-cream"
-                : "bg-white text-ink"
-          }`}
-        >
-          {status.text}
-        </div>
-      )}
+      <Toast api={toast} />
 
-      <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-ink/10 bg-white/80 p-1 shadow-xl shadow-ink/15 backdrop-blur-md">
-        {(
-          [
-            ["today", "Today", ListChecks],
-            ["patterns", "Patterns", Activity],
-            ["journal", "Journal", BookOpen],
-            ["setup", "Setup", Settings2],
-          ] as const
-        ).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => {
-              setSetupFocus(null);
-              setTab(id);
-            }}
-            aria-current={tab === id}
-            aria-label={label}
-            className={`flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-all duration-200 active:scale-95 sm:px-4 ${
-              tab === id ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
-            }`}
-          >
-            <Icon size={17} strokeWidth={2} />
-            <span className="hidden sm:inline">{label}</span>
-          </button>
-        ))}
-      </nav>
+      <Nav
+        tab={tab}
+        onTab={(id) => {
+          setSetupFocus(null);
+          setTab(id);
+        }}
+        onWarm={warm}
+      />
     </div>
   );
 }

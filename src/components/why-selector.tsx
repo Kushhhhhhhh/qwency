@@ -1,6 +1,7 @@
 "use client";
 
 import { WHY_TAGS } from "@/lib/tracker";
+import { Fold } from "./fold";
 import { Chip } from "./ui";
 
 /**
@@ -26,22 +27,20 @@ export function WhySelector({
   small?: boolean;
 }) {
   return (
-    <div className="fold" data-open={open} inert={!open}>
-      <div>
-        <div className={small ? "pt-3" : "pt-5"}>
-          <p className={`mb-2 ${small ? "text-xs" : "text-sm font-semibold"} text-ink/80`}>{prompt}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {WHY_TAGS.map((t) => {
-              const on = tags.includes(t.id);
-              return (
-                <Chip key={t.id} on={on} small={small} onClick={() => onChange(on ? tags.filter((x) => x !== t.id) : [...tags, t.id])}>
-                  {t.label}
-                </Chip>
-              );
-            })}
-          </div>
+    <Fold open={open}>
+      <div className={small ? "pt-3" : "pt-5"}>
+        <p className={`mb-2 ${small ? "text-xs" : "text-sm font-semibold"} text-ink/80`}>{prompt}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {WHY_TAGS.map((t) => {
+            const on = tags.includes(t.id);
+            return (
+              <Chip key={t.id} on={on} small={small} onClick={() => onChange(on ? tags.filter((x) => x !== t.id) : [...tags, t.id])}>
+                {t.label}
+              </Chip>
+            );
+          })}
         </div>
       </div>
-    </div>
+    </Fold>
   );
 }

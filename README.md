@@ -138,8 +138,8 @@ every column, so a missing one just means no goals yet) but saving goals fails.
 
 - **Catch-up and "still open"** (`src/components/nudge.tsx`, `catchUp` / `openToday` in
   `src/lib/insights.ts`): on Today, a quiet line when yesterday had planned sections you never logged
-  (one tap goes to that day; dismissing is remembered for the day), and after 8pm a line with what's
-  still open today. Both read the same mirror as Patterns.
+  (one tap goes to that day; dismissing is remembered for the day, in a small cookie so the server
+  already knows), and after 8pm a line with what's still open today. Both read the same mirror as Patterns.
 - **The streak is "days without a gap"** (`cleanRun`): everything planned done and nothing slipped,
   the day verdict included. Opening the app on a day of skipped sections doesn't extend it.
 - **Patterns says more, carefully** (all in `src/lib/insights.ts`, all derived, nothing new to log):
@@ -151,5 +151,34 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   with anyone's setup; it picks from nine starting points, each already saying what counts as a slip.
   Accounts that already have logged days keep working as before.
 - **Installable**: `src/app/manifest.ts` and the icons in `public/` let a phone add Qwency to the
-  home screen and open it like an app. `error.tsx` and `loading.tsx` replace the raw error page and
-  the blank wait.
+  home screen and open it like an app. `src/app/(app)/error.tsx` and `loading.tsx` replace the raw
+  error page and the blank wait.
+
+## Speed: what the page does on the way in
+
+Measured with Lighthouse (mobile, slow 4G) and, once deployed, Vercel Speed Insights.
+
+- **Region**: `vercel.json` runs functions in Mumbai (`bom1`), next to the database. Change it if the
+  Supabase project is elsewhere; every page load and every save is a trip between the two.
+- **The server draws the real Today** (`src/lib/clock.ts`, `src/app/(app)/page.tsx`). It works out
+  your day from a `tz` cookie (the browser sets it) or Vercel's guess from your connection, so the
+  heading, date and cards are in the first HTML. On arrival the browser's own calendar wins, so a
+  wrong guess is corrected, never trusted. The page starts the database read and streams it in
+  (`Tracker` takes a promise); the app's code downloads while the database answers.
+- **Only Today is loaded up front.** Patterns, Journal, Setup and the welcome screen are separate
+  chunks, fetched when a finger heads for the tab or the browser is idle. A closed fold
+  (`src/components/fold.tsx`) builds nothing until it first opens.
+- **The refresh when you come back** asks for the last 35 days only (`RECENT_DAYS`); coming back
+  online rereads everything. A day older than that, edited on another device, shows after a reload.
+- **Re-drawing**: `FieldView` redraws only when its own answer changed, with handlers that keep their
+  identity (`src/lib/use-stable.ts`), and the save toast is its own small component. The code is
+  written so React Compiler can compile every component (`try/finally` and a disabled lint rule each
+  make it give up on a whole component, so they're avoided).
+- **Layout**: nothing the server draws is removed or moved once the page is awake (dismissed
+  nudges are known to the server, avatar space is reserved, sign-in has a card-shaped placeholder).
+- **Not done on purpose**: no caching of signed-in pages or data anywhere shared (no `use cache`,
+  no service worker), since they hold one person's days. A copy of the days kept in the browser
+  wouldn't make the page paint sooner: the content follows the page's first bytes in the same
+  response as soon as the database answers (tens of milliseconds in the same region), well before
+  the code that could read such a copy has downloaded.
+

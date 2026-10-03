@@ -1,9 +1,15 @@
 import { SignUp } from "@clerk/nextjs";
+import { AuthCardSkeleton, AuthFrame } from "@/components/auth-frame";
+
+// Nothing here depends on who is asking, so it is built once instead of on every visit.
+export function generateStaticParams() {
+  return [{ "sign-up": [] }];
+}
 
 export default function Page() {
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <SignUp />
-    </main>
+    <AuthFrame>
+      <SignUp fallback={<AuthCardSkeleton />} />
+    </AuthFrame>
   );
 }

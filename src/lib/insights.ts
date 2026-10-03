@@ -41,12 +41,13 @@ export function openToday(spec: HabitSpec, entries: Entries, today: string): str
  * Days in a row with nothing missed: everything planned was done and nothing slipped, "the day
  * overall" included. Not "days you opened the app": a day of skipped sections doesn't extend
  * it. Today only counts once it's complete; while it's still open the run is judged to yesterday.
+ * Pass `mirror` (built over the last `days` days) when the caller already has one, to not build it twice.
  */
-export function cleanRun(spec: HabitSpec, entries: Entries, today: string, days = 90): { days: number; brokeOn: string | null } {
+export function cleanRun(spec: HabitSpec, entries: Entries, today: string, days = 90, mirror?: Mirror): { days: number; brokeOn: string | null } {
   const started = startedOn(entries, spec);
   if (started === null) return { days: 0, brokeOn: null };
   const dates = trailing(today, days);
-  const m = buildMirrorOver(spec, entries, today, dates);
+  const m = mirror ?? buildMirrorOver(spec, entries, today, dates);
   const at = (i: number) => m.rows.map((r) => r.cells[i].state);
 
   let i = dates.length - 1;
@@ -68,10 +69,18 @@ export type Trend = { gaps: number; prevGaps: number; direction: "up" | "down" |
  * This window's gaps against an earlier one. Skipped unless the earlier window is fully inside
  * the time you've been logging (a window that began before you did would always look "better"),
  * and when the two plan noticeably different amounts it says so in "of planned" terms instead of
- * comparing raw counts.
+ * comparing raw counts. Pass `current` (the mirror over `dates`) when the caller already has it.
  */
-export function trendLine(spec: HabitSpec, entries: Entries, today: string, dates: string[], prevDates: string[], label: string): Trend | null {
-  const cur = buildMirrorOver(spec, entries, today, dates);
+export function trendLine(
+  spec: HabitSpec,
+  entries: Entries,
+  today: string,
+  dates: string[],
+  prevDates: string[],
+  label: string,
+  current?: Mirror,
+): Trend | null {
+  const cur = current ?? buildMirrorOver(spec, entries, today, dates);
   const prev = buildMirrorOver(spec, entries, today, prevDates);
   if (cur.startedOn === null || prevDates.length === 0) return null;
   if (cur.startedOn > prevDates[0]) return null;
@@ -131,10 +140,11 @@ export type Link = { text: string; cause: string; effect: string; withCause: [nu
  * to learn from and six clean days to compare against, the effect at least half the time when X
  * slips, and at least 35 points more often than when X was fine. It says what happened, in counts,
  * never why. At most `max` links, each section used once, so two links are two different stories.
+ * Pass `mirror` (built over the last `days` days) when the caller already has one.
  */
-export function findLinks(spec: HabitSpec, entries: Entries, today: string, days = 90, max = 2): Link[] {
+export function findLinks(spec: HabitSpec, entries: Entries, today: string, days = 90, max = 2, mirror?: Mirror): Link[] {
   const dates = trailing(today, days);
-  const m = buildMirrorOver(spec, entries, today, dates);
+  const m = mirror ?? buildMirrorOver(spec, entries, today, dates);
   if (m.startedOn === null) return [];
 
   type Candidate = { a: RowMirror; b: RowMirror; n1: number; b1: number; n0: number; b0: number; score: number };

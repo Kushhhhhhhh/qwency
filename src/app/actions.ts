@@ -3,7 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getDb } from "@/lib/db";
 import { applyPatch, recordHistory, sanitizeData, sanitizeSpec, type Data, type HabitSpec } from "@/lib/spec";
-import { readSnapshot, type Snapshot } from "@/lib/snapshot";
+import { readSnapshot, WINDOW_DAYS, type Snapshot } from "@/lib/snapshot";
 import { sanitizePlan, type MonthPlan } from "@/lib/goals";
 import {
   DATE_RE,
@@ -86,11 +86,15 @@ export async function patchData(date: string, set: Data, remove: string[]): Prom
   });
 }
 
-/** A fresh read of everything, for an app that's been in the background. Null if it couldn't be read. */
-export async function loadSnapshot(): Promise<Snapshot | null> {
+/**
+ * A fresh read, for an app that's been in the background. Null if it couldn't be read. `days` limits
+ * how far back the days reach (the setup, focus lines and monthly plans always come back whole).
+ */
+export async function loadSnapshot(days?: number): Promise<Snapshot | null> {
   try {
     const userId = await requireUser();
-    return await readSnapshot(getDb(), userId);
+    const reach = typeof days === "number" && Number.isFinite(days) ? Math.min(Math.max(Math.floor(days), 7), WINDOW_DAYS) : WINDOW_DAYS;
+    return await readSnapshot(getDb(), userId, reach);
   } catch (e) {
     console.error(e);
     return null;

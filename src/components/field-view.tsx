@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import {
   CUSTOM_PICKS_PER_FIELD,
@@ -15,6 +15,8 @@ import {
   type Data,
   type FieldSpec,
 } from "@/lib/spec";
+import { same } from "@/lib/sync";
+import { Fold } from "./fold";
 import { Chip } from "./ui";
 import { WhySelector } from "./why-selector";
 
@@ -32,28 +34,41 @@ type Props = {
   onCustom: (field: FieldSpec, label: string) => void;
 };
 
-export function FieldView({ field, data, askWhy, split, onChange, onWhy, onCustom }: Props) {
+/**
+ * A question only re-draws when something it shows changed: its own answer, its "why" reasons, the
+ * answer its condition looks at, or (for a number with a breakdown) any of the day's answers. The
+ * handlers must keep their identity for this to hold (see `onField` & co in tracker.tsx).
+ */
+function sameProps(a: Props, b: Props) {
+  if (a.field !== b.field || a.askWhy !== b.askWhy || a.split !== b.split) return false;
+  if (a.onChange !== b.onChange || a.onWhy !== b.onWhy || a.onCustom !== b.onCustom) return false;
+  if (a.data === b.data) return true;
+  if (a.split) return same(a.data, b.data); // the split rows read one answer per pick
+  const k = a.field.key;
+  const c = a.field.showIf?.field;
+  return same(a.data[k], b.data[k]) && same(a.data[whyKey(k)], b.data[whyKey(k)]) && (c === undefined || same(a.data[c], b.data[c]));
+}
+
+export const FieldView = memo(function FieldView({ field, data, askWhy, split, onChange, onWhy, onCustom }: Props) {
   const open = fieldVisible(field, data);
   return (
-    <div className="fold" data-open={open} inert={!open}>
-      <div>
-        <div className="pt-4">
-          <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
-          <Body field={field} data={data} split={split} onChange={onChange} onCustom={onCustom} />
-          {/* whether it opens is decided once per section (whyPromptKey), so two slips don't ask twice */}
-          {field.kind !== "multi" && (
-            <WhySelector
-              tags={(data[whyKey(field.key)] as string[] | undefined) ?? []}
-              open={askWhy}
-              onChange={(next) => onWhy(field.key, next)}
-              small
-            />
-          )}
-        </div>
+    <Fold open={open}>
+      <div className="pt-4">
+        <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
+        <Body field={field} data={data} split={split} onChange={onChange} onCustom={onCustom} />
+        {/* whether it opens is decided once per section (whyPromptKey), so two slips don't ask twice */}
+        {field.kind !== "multi" && (
+          <WhySelector
+            tags={(data[whyKey(field.key)] as string[] | undefined) ?? []}
+            open={askWhy}
+            onChange={(next) => onWhy(field.key, next)}
+            small
+          />
+        )}
       </div>
-    </div>
+    </Fold>
   );
-}
+}, sameProps);
 
 function Body({ field, data, split, onChange, onCustom }: Pick<Props, "field" | "data" | "split" | "onChange" | "onCustom">) {
   const v = data[field.key];
@@ -203,27 +218,25 @@ function SplitRows({
           : `Adds up to ${show(sum)}, ${show(round2(sum - total))} over the total.`;
 
   return (
-    <div className="fold" data-open={picked.length > 0} inert={picked.length === 0}>
-      <div>
-        <div className="pt-4">
-          <p className="mb-2 text-xs font-medium text-ink/75">
-            Split it up <span className="font-normal text-ink/60">(optional)</span>
-          </p>
-          <div className="space-y-1.5">
-            {picked.map((o) => (
-              <SplitInput
-                key={o.id}
-                label={o.label}
-                parent={parent}
-                value={part(o.id)}
-                onCommit={(n) => onChange(splitKey(field.key, o.id), n)}
-              />
-            ))}
-          </div>
-          {line && <p className="mt-2 text-xs text-ink/70">{line}</p>}
+    <Fold open={picked.length > 0}>
+      <div className="pt-4">
+        <p className="mb-2 text-xs font-medium text-ink/75">
+          Split it up <span className="font-normal text-ink/60">(optional)</span>
+        </p>
+        <div className="space-y-1.5">
+          {picked.map((o) => (
+            <SplitInput
+              key={o.id}
+              label={o.label}
+              parent={parent}
+              value={part(o.id)}
+              onCommit={(n) => onChange(splitKey(field.key, o.id), n)}
+            />
+          ))}
         </div>
+        {line && <p className="mt-2 text-xs text-ink/70">{line}</p>}
       </div>
-    </div>
+    </Fold>
   );
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { X } from "lucide-react";
+import { DISMISS_COOKIE, serializeDismissed } from "@/lib/dismissed";
 import { catchUp, listTitles, openToday } from "@/lib/insights";
 import type { HabitSpec } from "@/lib/spec";
 import { prettyDate, type Entries } from "@/lib/tracker";
@@ -9,10 +10,11 @@ import { prettyDate, type Entries } from "@/lib/tracker";
 // Two quiet lines at the top of Today, never a popup and never a count of how you're doing:
 //  - yesterday had planned things you never logged: one tap goes to that day to fill them in
 //  - it's evening and today still has open sections
-// Both only look at what the mirror already knows. Dismissing the first is remembered for that day.
+// Both only look at what the mirror already knows. Dismissing the first is remembered for that day
+// (in a cookie, so the server already knows about it when it draws the page).
 
-const KEY = "qwency:catchup-dismissed";
 const EVENING = 20; // 8pm
+const NONE: string[] = [];
 
 export function Nudges({
   spec,
@@ -20,6 +22,7 @@ export function Nudges({
   today,
   selected,
   hour,
+  dismissed: initialDismissed = NONE,
   onFill,
 }: {
   spec: HabitSpec;
@@ -27,18 +30,11 @@ export function Nudges({
   today: string;
   selected: string;
   hour: number;
+  /** the days whose catch-up line was already waved away (from the cookie) */
+  dismissed?: string[];
   onFill: (date: string) => void;
 }) {
-  // remembered per day in this browser; if storage isn't available it just reappears, which is harmless
-  const [dismissed, setDismissed] = useState<string[]>([]);
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(KEY) ?? "[]");
-      if (Array.isArray(saved)) setDismissed(saved.filter((x): x is string => typeof x === "string").slice(-14));
-    } catch {
-      /* private window or blocked storage */
-    }
-  }, []);
+  const [dismissed, setDismissed] = useState(initialDismissed);
 
   if (selected !== today) return null;
 
@@ -51,11 +47,7 @@ export function Nudges({
   function dismiss(date: string) {
     const next = [...dismissed, date].slice(-14);
     setDismissed(next);
-    try {
-      localStorage.setItem(KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
+    document.cookie = `${DISMISS_COOKIE}=${serializeDismissed(next)}; path=/; max-age=31536000; samesite=lax`;
   }
 
   return (

@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
-const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 const NAME = "Qwency";
 const DESCRIPTION = "Tap in your day: sleep, work, gym, skin, spending and mood. See the patterns behind your days.";
@@ -34,6 +34,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#FDF8E2",
+  colorScheme: "light",
   width: "device-width",
   initialScale: 1,
 };
@@ -41,8 +42,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
-        <body className="min-h-full flex flex-col">{children}</body>
+      <html lang="en" className={`${geistSans.variable} h-full`}>
+        <body className="min-h-full flex flex-col">
+          {children}
+          {/* page-speed numbers from real visits (loads after the page is interactive, collects no personal data) */}
+          <SpeedInsights />
+        </body>
       </html>
     </ClerkProvider>
   );
