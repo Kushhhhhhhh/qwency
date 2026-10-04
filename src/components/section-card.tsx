@@ -35,18 +35,18 @@ export function SectionCard({
     <section className={`tile tile-${variant} rise p-5`} style={{ animationDelay: `${index * 45}ms` }}>
       {/* dimmed on an inner wrapper: the entrance animation fills forward with opacity 1 and
           would override an opacity class on the section itself */}
-      <div className={`transition-opacity ${muted ? "opacity-70" : ""}`}>
+      <div className={`transition-opacity ${muted ? "opacity-80" : ""}`}>
         <header className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-2xl bg-white/55">
+          <span className="flex size-10 items-center justify-center rounded-2xl bg-surface/55">
             <Icon size={20} strokeWidth={1.8} />
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold leading-tight">{title}</h2>
-            <p className="text-xs text-ink/70">{hint}</p>
+            <p className="text-xs text-soft">{hint}</p>
           </div>
           <span
             className={`flex size-7 items-center justify-center rounded-full border transition-colors duration-300 ${
-              done ? "border-transparent bg-ink" : "border-ink/20 bg-white/30"
+              done ? "border-transparent bg-ink" : "border-ink/20 bg-surface/30"
             }`}
           >
             {done && <Check key="c" size={15} strokeWidth={3} className="check-pop text-cream" />}
@@ -87,12 +87,12 @@ export function DayVerdict({
               aria-pressed={on}
               onClick={() => onMood(m.id)}
               className={`chip flex flex-col items-center gap-1 rounded-2xl py-4 ${
-                on ? "bg-ink text-cream shadow-md shadow-ink/30" : ""
+                on ? "bg-ink text-cream shadow-md shadow-shade/30" : ""
               }`}
             >
               <Icon size={26} strokeWidth={1.8} className={on ? MOOD_ICON_COLOR[m.id] : ""} />
               <span className="text-sm font-semibold">{m.label}</span>
-              <span className="text-[11px] opacity-60">{m.sub}</span>
+              <span className="text-xs opacity-80">{m.sub}</span>
             </button>
           );
         })}

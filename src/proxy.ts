@@ -1,10 +1,15 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 
 const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
 
-export const proxy = clerkMiddleware(async (auth, req) => {
+const clerk = clerkMiddleware(async (auth, req) => {
   if (!isPublic(req)) await auth.protect();
 });
+
+// TEMPORARY (visual/perf checks, removed with src/app/bench)
+export const proxy = (req: NextRequest, ev: NextFetchEvent) =>
+  process.env.QWENCY_BENCH === "1" && req.nextUrl.pathname.startsWith("/bench") ? NextResponse.next() : clerk(req, ev);
 
 export const config = {
   matcher: [

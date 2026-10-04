@@ -66,7 +66,7 @@ export function NoteField({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1.5 text-sm font-medium text-ink/80 transition-colors hover:text-ink"
+        className="flex items-center gap-1.5 text-sm font-medium text-ink/85 transition-colors hover:text-ink"
       >
         {open ? <Minus size={15} /> : <Plus size={15} />}
         {open ? closeLabel : text ? filledLabel : openLabel}
@@ -88,10 +88,10 @@ export function NoteField({
             }}
             onBlur={() => flush(text)}
             placeholder={placeholder}
-            className="w-full resize-none rounded-2xl border border-ink/20 bg-white/70 p-3 text-sm outline-none transition-colors placeholder:text-ink/55 focus:border-ink"
+            className="w-full resize-none rounded-2xl border border-ink/20 bg-surface/70 p-3 text-sm outline-none transition-colors placeholder:text-soft focus:border-ink"
           />
-          <div className="flex justify-between text-[11px] text-ink/65">
-            <span aria-live="polite" className={save === "error" ? "text-bad" : ""}>
+          <div className="flex justify-between text-xs text-soft">
+            <span aria-live="polite" className={save === "error" ? "text-danger" : ""}>
               {save === "saving" ? "Saving…" : save === "saved" ? "Saved" : save === "error" ? "Couldn’t save" : ""}
             </span>
             <span>

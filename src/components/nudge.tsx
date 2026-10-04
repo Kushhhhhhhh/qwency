@@ -53,7 +53,7 @@ export function Nudges({
   return (
     <div className="flex flex-col gap-2">
       {showCatchUp && missed && (
-        <div role="status" className="flex items-start gap-3 rounded-2xl border border-ink/10 bg-white/70 px-4 py-3 text-sm">
+        <div role="status" className="flex items-start gap-3 rounded-2xl border border-ink/10 bg-surface/70 px-4 py-3 text-sm">
           <p className="min-w-0 flex-1 leading-snug text-ink/85">
             <span className="font-semibold text-ink">{prettyDate(missed.date).split(",")[0]}</span> has {missed.titles.length} not logged:{" "}
             {listTitles(missed.titles)}.{" "}
@@ -65,14 +65,14 @@ export function Nudges({
             type="button"
             onClick={() => dismiss(missed.date)}
             aria-label="Not now"
-            className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-ink/50 transition-colors hover:text-ink"
+            className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
           >
             <X size={14} />
           </button>
         </div>
       )}
       {showEvening && (
-        <p role="status" className="rounded-2xl bg-white/50 px-4 py-2.5 text-sm leading-snug text-ink/80">
+        <p role="status" className="rounded-2xl bg-surface/50 px-4 py-2.5 text-sm leading-snug text-ink/85">
           {open.length === 1 ? "1 thing" : `${open.length} things`} still open today: {listTitles(open)}.
         </p>
       )}

@@ -29,7 +29,7 @@ export function WhySelector({
   return (
     <Fold open={open}>
       <div className={small ? "pt-3" : "pt-5"}>
-        <p className={`mb-2 ${small ? "text-xs" : "text-sm font-semibold"} text-ink/80`}>{prompt}</p>
+        <p className={`mb-2 ${small ? "text-xs" : "text-sm font-semibold"} text-ink/85`}>{prompt}</p>
         <div className="flex flex-wrap gap-1.5">
           {WHY_TAGS.map((t) => {
             const on = tags.includes(t.id);

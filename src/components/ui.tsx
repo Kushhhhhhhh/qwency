@@ -24,7 +24,7 @@ export function Chip({
       aria-pressed={on}
       onClick={onClick}
       className={`chip rounded-full font-medium ${small ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"} ${
-        on ? "bg-ink text-cream shadow-md shadow-ink/30" : "text-ink"
+        on ? "bg-ink text-cream shadow-md shadow-shade/30" : "text-ink"
       }`}
     >
       {tone && <span className={`mr-2 inline-block size-2 rounded-full align-middle ${DOT[tone]}`} />}

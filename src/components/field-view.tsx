@@ -54,7 +54,7 @@ export const FieldView = memo(function FieldView({ field, data, askWhy, split, o
   return (
     <Fold open={open}>
       <div className="pt-4">
-        <p className="mb-2 text-xs font-medium text-ink/75">{field.label}</p>
+        <p className="mb-2 text-xs font-medium text-soft">{field.label}</p>
         <Body field={field} data={data} split={split} onChange={onChange} onCustom={onCustom} />
         {/* whether it opens is decided once per section (whyPromptKey), so two slips don't ask twice */}
         {field.kind !== "multi" && (
@@ -154,7 +154,7 @@ function Body({ field, data, split, onChange, onCustom }: Pick<Props, "field" | 
             <span key={n} className="bump inline-block text-4xl font-semibold tabular-nums">
               {n}
             </span>
-            <span className="ml-1 text-sm text-ink/75">/ {field.goal} {field.unit}</span>
+            <span className="ml-1 text-sm text-soft">/ {field.goal} {field.unit}</span>
           </div>
           <RoundBtn label="More" onClick={() => onChange(field.key, Math.min(field.max, n + 1))} disabled={n >= field.max}>
             <Plus size={18} />
@@ -220,8 +220,8 @@ function SplitRows({
   return (
     <Fold open={picked.length > 0}>
       <div className="pt-4">
-        <p className="mb-2 text-xs font-medium text-ink/75">
-          Split it up <span className="font-normal text-ink/60">(optional)</span>
+        <p className="mb-2 text-xs font-medium text-soft">
+          Split it up <span className="font-normal text-soft">(optional)</span>
         </p>
         <div className="space-y-1.5">
           {picked.map((o) => (
@@ -234,7 +234,7 @@ function SplitRows({
             />
           ))}
         </div>
-        {line && <p className="mt-2 text-xs text-ink/70">{line}</p>}
+        {line && <p className="mt-2 text-xs text-soft">{line}</p>}
       </div>
     </Fold>
   );
@@ -264,7 +264,7 @@ function SplitInput({
   return (
     <label className="flex items-center gap-3">
       <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
-      <span className="flex items-center gap-1 text-sm text-ink/70">
+      <span className="flex items-center gap-1 text-sm text-soft">
         {parent.prefix}
         <input
           value={text}
@@ -274,7 +274,7 @@ function SplitInput({
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
           placeholder="optional"
           aria-label={`${label} amount`}
-          className="chip w-24 rounded-full px-3 py-1.5 text-right text-sm text-ink outline-none placeholder:text-ink/45 focus:border-ink"
+          className="chip w-24 rounded-full px-3 py-1.5 text-right text-sm text-ink outline-none placeholder:text-soft focus:border-ink"
         />
         {parent.suffix}
       </span>
@@ -284,7 +284,7 @@ function SplitInput({
 
 /** Says why a chip is there, and where to go if it should stay. */
 function DayOnlyNote() {
-  return <p className="mt-2 text-[11px] text-ink/60">Added for this day only. To keep it every day, add it in Setup.</p>;
+  return <p className="mt-2 text-xs text-soft">Added for this day only. To keep it every day, add it in Setup.</p>;
 }
 
 /**
@@ -308,7 +308,7 @@ function AddOption({ onAdd }: { onAdd: (label: string) => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="chip flex items-center gap-1 rounded-full px-3.5 py-2 text-sm text-ink/60"
+        className="chip flex items-center gap-1 rounded-full px-3.5 py-2 text-sm text-soft"
       >
         <Plus size={14} /> Add for this day
       </button>
@@ -323,7 +323,7 @@ function AddOption({ onAdd }: { onAdd: (label: string) => void }) {
       onKeyDown={(e) => e.key === "Enter" && submit()}
       onBlur={submit}
       placeholder="Type it, then Enter"
-      className="chip w-36 rounded-full px-4 py-2 text-sm outline-none placeholder:text-ink/45 focus:border-ink"
+      className="chip w-36 rounded-full px-4 py-2 text-sm outline-none placeholder:text-soft focus:border-ink"
     />
   );
 }
@@ -396,7 +396,7 @@ function Amount({
           <button
             type="button"
             onClick={() => onChange(field.key, undefined)}
-            className="text-xs text-ink/65 underline underline-offset-2 hover:text-ink"
+            className="text-xs text-soft underline underline-offset-2 hover:text-ink"
           >
             reset
           </button>
@@ -419,10 +419,10 @@ function Amount({
           onKeyDown={(e) => e.key === "Enter" && commit()}
           placeholder={`Exact ${field.prefix}${field.suffix}`.trim() || "Exact"}
           aria-label="Exact amount"
-          className="chip w-24 rounded-full px-4 py-2 text-sm outline-none placeholder:text-ink/55 focus:border-ink"
+          className="chip w-24 rounded-full px-4 py-2 text-sm outline-none placeholder:text-soft focus:border-ink"
         />
       </div>
-      {targetLine && <p className="mt-2 text-xs text-ink/70">{targetLine}</p>}
+      {targetLine && <p className="mt-2 text-xs text-soft">{targetLine}</p>}
     </div>
   );
 }

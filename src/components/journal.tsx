@@ -69,9 +69,9 @@ export function Journal({
   return (
     <div className="flex flex-col gap-4">
       <section className="tile tile-lilac p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-ink/70">Journal</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-soft">Journal</p>
         <h2 className="mt-1 text-base font-semibold">Everything you've written</h2>
-        <p className="mt-1 text-sm text-ink/75">
+        <p className="mt-1 text-sm text-soft">
           {all.length === 0
             ? "Anything you jot down — on a section or at the end of a day — shows up here."
             : `${all.length} note${all.length === 1 ? "" : "s"} so far.`}
@@ -79,8 +79,8 @@ export function Journal({
 
         {all.length > 0 && (
           <>
-            <div className="mt-4 flex items-center gap-2 rounded-full border border-ink/15 bg-white/70 px-3 py-2">
-              <Search size={15} className="shrink-0 text-ink/50" />
+            <div className="mt-4 flex items-center gap-2 rounded-full border border-ink/15 bg-surface/70 px-3 py-2">
+              <Search size={15} className="shrink-0 text-soft" />
               <input
                 value={query}
                 onChange={(e) => {
@@ -88,7 +88,7 @@ export function Journal({
                   setLimit(PAGE);
                 }}
                 placeholder="Search your notes"
-                className="w-full bg-transparent text-sm outline-none placeholder:text-ink/45"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-soft"
               />
             </div>
 
@@ -117,7 +117,7 @@ export function Journal({
       </section>
 
       {all.length > 0 && matching.length === 0 && (
-        <p className="px-1 text-sm text-ink/60">Nothing matches "{query}".</p>
+        <p className="px-1 text-sm text-soft">Nothing matches "{query}".</p>
       )}
 
       <div className="flex flex-col gap-3">
@@ -132,11 +132,11 @@ export function Journal({
               // off-screen cards aren't laid out or painted until they scroll near
               className="card rise p-4 text-left transition-transform [contain-intrinsic-size:auto_6rem] [content-visibility:auto] active:scale-[0.99]"
             >
-              <div className="flex flex-wrap items-center gap-2 text-xs text-ink/60">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-soft">
                 {MoodIcon && <MoodIcon size={15} strokeWidth={2} className={MOOD_TEXT[it.entry.mood!]} />}
                 <span className="font-medium">{prettyDate(it.date)}</span>
                 {it.source.kind === "section" && SectionIcon && (
-                  <span className="flex items-center gap-1 rounded-full bg-lilac/40 px-2 py-0.5 text-[11px] font-medium text-ink/75">
+                  <span className="flex items-center gap-1 rounded-full bg-lilac/40 px-2 py-0.5 text-xs font-medium text-ink">
                     <SectionIcon size={11} strokeWidth={2} />
                     {it.source.title}
                   </span>
@@ -146,7 +146,7 @@ export function Journal({
               {it.source.kind === "day" && it.entry.mood === "bad" && it.entry.tags.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {it.entry.tags.map((t) => (
-                    <span key={t} className="rounded-full bg-bad/15 px-2 py-0.5 text-[11px] font-medium text-ink/70">
+                    <span key={t} className="rounded-full bg-bad/15 px-2 py-0.5 text-xs font-medium text-ink">
                       {WHY_LABEL.get(t) ?? t}
                     </span>
                   ))}

@@ -45,11 +45,11 @@ export function DayStrip({
             aria-current={on ? "date" : undefined}
             className={`flex w-12 shrink-0 flex-col items-center gap-1 rounded-2xl border py-2 transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-95 ${
               on
-                ? "border-transparent bg-ink text-cream shadow-lg shadow-ink/25"
-                : "border-ink/10 bg-white/60 hover:border-ink/30"
+                ? "border-transparent bg-ink text-cream shadow-lg shadow-shade/25"
+                : "border-ink/10 bg-surface/60 hover:border-ink/30"
             }`}
           >
-            <span className={`text-[10px] font-medium uppercase ${on ? "text-cream/70" : "text-ink/50"}`}>
+            <span className={`text-[11px] font-medium uppercase ${on ? "text-cream/70" : "text-soft"}`}>
               {d === today ? "Today" : WEEKDAYS[weekdayIndex(d)]}
             </span>
             <span className="text-base font-semibold tabular-nums">{Number(d.slice(8))}</span>

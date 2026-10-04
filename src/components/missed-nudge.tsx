@@ -19,7 +19,7 @@ export function MissedNudge({ tags, onChange }: { tags: string[]; onChange: (tag
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="text-left text-sm text-ink/80 underline decoration-ink/30 decoration-dotted underline-offset-4 transition-colors hover:text-ink"
+        className="text-left text-sm text-ink/85 underline decoration-ink/30 decoration-dotted underline-offset-4 transition-colors hover:text-ink"
       >
         {said.length > 0 ? `Not logged. Why: ${said.join(", ")}` : "Nothing logged for this one. Want to say why?"}
       </button>

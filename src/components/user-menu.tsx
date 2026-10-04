@@ -21,7 +21,7 @@ export function UserMenu({ size = 48 }: { size?: number }) {
       {ready ? (
         <UserButton
           fallback={placeholder}
-          appearance={{ elements: { avatarBox: { width: size, height: size, boxShadow: "0 0 0 2px rgb(80 78 118 / 0.15)" } } }}
+          appearance={{ elements: { avatarBox: { width: size, height: size, boxShadow: "0 0 0 2px color-mix(in oklab, var(--color-ink) 15%, transparent)" } } }}
         />
       ) : (
         placeholder

@@ -35,27 +35,27 @@ type Common = {
 
 const STATUS_CHIP: Record<GoalStatus, string> = {
   reached: "bg-ink text-cream",
-  "on-pace": "bg-white text-ink",
-  behind: "bg-meh text-ink",
-  "out-of-reach": "bg-bad text-[#2b2946]",
-  missed: "bg-bad text-[#2b2946]",
-  over: "bg-bad text-[#2b2946]",
+  "on-pace": "bg-surface text-ink",
+  behind: "bg-meh text-onpastel",
+  "out-of-reach": "bg-bad text-onpastel",
+  missed: "bg-bad text-onpastel",
+  over: "bg-bad text-onpastel",
 };
 
 function GoalRow({ v, onRemove }: { v: GoalView; onRemove: () => void }) {
   return (
-    <li className="rounded-2xl bg-white/60 p-3">
+    <li className="rounded-2xl bg-surface/60 p-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-tight">{v.title}</p>
-          <p className="text-xs text-ink/70">{v.headline}</p>
+          <p className="text-xs text-soft">{v.headline}</p>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_CHIP[v.status]}`}>{STATUS_WORD[v.status]}</span>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CHIP[v.status]}`}>{STATUS_WORD[v.status]}</span>
         <button
           type="button"
           onClick={onRemove}
           aria-label={`Remove goal: ${v.title}`}
-          className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-ink/50 transition-colors hover:text-ink"
+          className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
         >
           <X size={14} />
         </button>
@@ -67,7 +67,7 @@ function GoalRow({ v, onRemove }: { v: GoalView; onRemove: () => void }) {
           <i className="absolute -top-0.75 h-3.5 w-0.5 rounded-full bg-ink/60" style={{ left: `${Math.round(v.pace * 100)}%` }} aria-hidden />
         )}
       </div>
-      <p className="mt-1.5 text-xs text-ink/80">
+      <p className="mt-1.5 text-xs text-ink/85">
         <b className="font-semibold text-ink">{v.progress}</b> · {v.note}
       </p>
     </li>
@@ -121,7 +121,7 @@ function AddGoal({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-3 flex items-center gap-1.5 rounded-full bg-white/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-white/80"
+        className="mt-3 flex items-center gap-1.5 rounded-full bg-surface/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-surface/80"
       >
         <Plus size={15} /> Add a goal
       </button>
@@ -129,10 +129,10 @@ function AddGoal({
   }
 
   return (
-    <div className="mt-3 rounded-2xl bg-white/60 p-3">
+    <div className="mt-3 rounded-2xl bg-surface/60 p-3">
       {free.length > 0 && (
         <>
-          <p className="mb-2 text-xs font-medium text-ink/75">From your setup, one tap</p>
+          <p className="mb-2 text-xs font-medium text-soft">From your setup, one tap</p>
           <div className="flex flex-wrap gap-1.5">
             {free.map((s) => (
               <Chip
@@ -153,7 +153,7 @@ function AddGoal({
 
       {!own ? (
         choices.length > 0 && (
-          <button type="button" onClick={() => setOwn(true)} className="mt-3 block text-xs text-ink/70 underline underline-offset-2 hover:text-ink">
+          <button type="button" onClick={() => setOwn(true)} className="mt-3 block text-xs text-soft underline underline-offset-2 hover:text-ink">
             Set your own
           </button>
         )
@@ -162,7 +162,7 @@ function AddGoal({
           <select
             value={what}
             onChange={(e) => setWhat(e.target.value)}
-            className="w-full appearance-none rounded-xl border border-ink/15 bg-white/80 px-3 py-2 outline-none focus:border-ink"
+            className="w-full appearance-none rounded-xl border border-ink/15 bg-surface/80 px-3 py-2 outline-none focus:border-ink"
           >
             <option value="">What do you want to aim at?</option>
             {choices.map((c) => (
@@ -177,7 +177,7 @@ function AddGoal({
                 <select
                   value={op}
                   onChange={(e) => setOp(e.target.value === "atLeast" ? "atLeast" : "atMost")}
-                  className="appearance-none rounded-xl border border-ink/15 bg-white/80 px-3 py-2 outline-none focus:border-ink"
+                  className="appearance-none rounded-xl border border-ink/15 bg-surface/80 px-3 py-2 outline-none focus:border-ink"
                 >
                   <option value="atMost">Within</option>
                   <option value="atLeast">At least</option>
@@ -190,7 +190,7 @@ function AddGoal({
                 onKeyDown={(e) => e.key === "Enter" && addOwn()}
                 placeholder={isTotal ? "amount" : "how many days"}
                 aria-label="Target"
-                className="w-32 rounded-xl border border-ink/15 bg-white/80 px-3 py-2 outline-none focus:border-ink"
+                className="w-32 rounded-xl border border-ink/15 bg-surface/80 px-3 py-2 outline-none focus:border-ink"
               />
               <button
                 type="button"
@@ -205,7 +205,7 @@ function AddGoal({
         </div>
       )}
 
-      <button type="button" onClick={close} className="mt-3 block text-xs text-ink/60 hover:text-ink">
+      <button type="button" onClick={close} className="mt-3 block text-xs text-soft hover:text-ink">
         Cancel
       </button>
     </div>
@@ -257,8 +257,8 @@ export function MonthCard({
   return (
     <section className="tile tile-good p-5">
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-ink/70">{monthName(month)} · direction</p>
-        <p className="text-xs text-ink/70">
+        <p className="text-xs font-medium uppercase tracking-wider text-soft">{monthName(month)} · direction</p>
+        <p className="text-xs text-soft">
           Day {dayOfMonth} of {daysInMonth(month)}
         </p>
       </div>
@@ -277,7 +277,7 @@ export function MonthCard({
           if (text !== focus) onFocus(month, text);
         }}
         placeholder="Where am I heading this month?"
-        className="mt-2 w-full border-b border-ink/25 bg-transparent pb-2 text-lg font-medium outline-none transition-colors placeholder:text-ink/50 focus:border-ink"
+        className="mt-2 w-full border-b border-ink/25 bg-transparent pb-2 text-lg font-medium outline-none transition-colors placeholder:text-soft focus:border-ink"
       />
 
       {views.length > 0 ? (
@@ -287,7 +287,7 @@ export function MonthCard({
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-ink/80">
+        <p className="mt-4 text-sm text-ink/85">
           {monthName(month)} has started. What are you aiming at? Goals are measured from what you already log, so there&apos;s nothing to tick.
         </p>
       )}
@@ -296,7 +296,7 @@ export function MonthCard({
         <button
           type="button"
           onClick={() => save(repeatGoals(lastPlan, { goals: liveGoals }))}
-          className="mt-3 mr-2 rounded-full bg-white/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-white/80"
+          className="mt-3 mr-2 rounded-full bg-surface/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-surface/80"
         >
           Repeat {monthName(lastMonth)}&apos;s goals
         </button>
@@ -305,15 +305,15 @@ export function MonthCard({
       {liveGoals.length < MAX_GOALS ? (
         <AddGoal spec={spec} suggestions={suggestions} taken={taken} onAdd={(g) => save([...liveGoals, { ...g, id: newGoalId(liveGoals) }])} />
       ) : (
-        <p className="mt-3 text-xs text-ink/70">That&apos;s {MAX_GOALS} goals, enough to keep the month clear.</p>
+        <p className="mt-3 text-xs text-soft">That&apos;s {MAX_GOALS} goals, enough to keep the month clear.</p>
       )}
 
       <div className="mt-5 flex items-center justify-between text-sm">
         <span>
           <b className="text-xl font-semibold tabular-nums">{logged}</b>
-          <span className="text-ink/75"> / {dayOfMonth} days logged</span>
+          <span className="text-soft"> / {dayOfMonth} days logged</span>
         </span>
-        <span className="rounded-full bg-white/60 px-3 py-1 text-xs font-semibold">
+        <span className="rounded-full bg-surface/60 px-3 py-1 text-xs font-semibold">
           {run.days > 0 ? `${run.days} ${run.days === 1 ? "day" : "days"} without a gap` : run.brokeOn ? "Fresh start" : "No run yet"}
         </span>
       </div>
@@ -339,12 +339,12 @@ export function MonthCard({
         })}
       </div>
       {run.days > 0 && next && (
-        <p className="mt-3 text-xs text-ink/70">
+        <p className="mt-3 text-xs text-soft">
           {next - run.days} more {next - run.days === 1 ? "day" : "days"} to {next} without a gap.
         </p>
       )}
       {run.days === 0 && run.brokeOn && (
-        <p className="mt-3 text-xs text-ink/70">The last gap was {shortDate(run.brokeOn)}. Today can start a new run.</p>
+        <p className="mt-3 text-xs text-soft">The last gap was {shortDate(run.brokeOn)}. Today can start a new run.</p>
       )}
     </section>
   );
@@ -378,19 +378,19 @@ export function MonthReview({
 
   return (
     <section className="tile tile-lilac p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/70">{monthName(month)}, in review</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-soft">{monthName(month)}, in review</p>
 
       {focus.trim() && <p className="mt-2 text-lg font-medium leading-snug">&ldquo;{focus.trim()}&rdquo;</p>}
 
       {views.length > 0 && (
         <ul className="mt-3 flex flex-col gap-1.5">
           {views.map((v) => (
-            <li key={v.goal.id} className="flex items-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-sm">
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_CHIP[v.status]}`}>{STATUS_WORD[v.status]}</span>
+            <li key={v.goal.id} className="flex items-center gap-2 rounded-xl bg-surface/60 px-3 py-2 text-sm">
+              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_CHIP[v.status]}`}>{STATUS_WORD[v.status]}</span>
               <span className="min-w-0 flex-1 truncate">
-                <b className="font-semibold">{v.title}</b> <span className="text-ink/70">{v.headline}</span>
+                <b className="font-semibold">{v.title}</b> <span className="text-soft">{v.headline}</span>
               </span>
-              <span className="shrink-0 text-xs tabular-nums text-ink/80">{v.progress}</span>
+              <span className="shrink-0 text-xs tabular-nums text-ink/85">{v.progress}</span>
             </li>
           ))}
         </ul>
@@ -420,7 +420,7 @@ export function MonthReview({
             if (note !== review.note) setReview(review.outcome, note);
           }}
           placeholder="What got in the way, or what worked? Just for you."
-          className="mt-3 w-full border-b border-ink/25 bg-transparent pb-2 text-sm outline-none transition-colors placeholder:text-ink/55 focus:border-ink"
+          className="mt-3 w-full border-b border-ink/25 bg-transparent pb-2 text-sm outline-none transition-colors placeholder:text-soft focus:border-ink"
         />
       )}
     </section>

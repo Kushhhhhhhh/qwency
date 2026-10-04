@@ -147,8 +147,8 @@ function Hero({
   return (
     <section className="tile tile-meh p-5">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-ink/70">The mirror</p>
-        <div className="flex rounded-full border border-ink/10 bg-white/70 p-0.5 text-xs font-medium">
+        <p className="text-xs font-medium uppercase tracking-wider text-soft">The mirror</p>
+        <div className="flex rounded-full border border-ink/10 bg-surface/70 p-0.5 text-xs font-medium">
           {options.map((o) => (
             <button
               key={o.id}
@@ -156,7 +156,7 @@ function Hero({
               onClick={() => onChange(o.id)}
               aria-pressed={value === o.id}
               className={`rounded-full px-2.5 py-1 transition-colors ${
-                value === o.id ? "bg-ink text-cream" : "text-ink/75 hover:text-ink"
+                value === o.id ? "bg-ink text-cream" : "text-soft hover:text-ink"
               }`}
             >
               {o.label}
@@ -175,9 +175,9 @@ function Hero({
             You planned {totals.planned}. You did {totals.done}.
             {totals.gaps > 0 ? ` That leaves ${totals.gaps} ${totals.gaps === 1 ? "gap" : "gaps"}.` : " No gaps."}
           </p>
-          {trend && <p className="mt-1 text-sm text-ink/80">{trend.text}</p>}
+          {trend && <p className="mt-1 text-sm text-ink/85">{trend.text}</p>}
           {shape && (
-            <p className="mt-1 text-sm text-ink/80">
+            <p className="mt-1 text-sm text-ink/85">
               {shape.day} are where it slips most: {shape.gaps} of {shape.planned} planned missed.
             </p>
           )}
@@ -202,11 +202,11 @@ function Hero({
 
           {reasons.length > 0 && (
             <div className="mt-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-ink/70">What got in the way</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-soft">What got in the way</p>
               <div className="flex flex-wrap gap-1.5">
                 {reasons.slice(0, 6).map((r) => (
-                  <span key={r.label} className="rounded-full bg-white/70 px-3 py-1 text-sm font-medium">
-                    {r.label} <span className="text-ink/60">×{r.n}</span>
+                  <span key={r.label} className="rounded-full bg-surface/70 px-3 py-1 text-sm font-medium">
+                    {r.label} <span className="text-soft">×{r.n}</span>
                   </span>
                 ))}
               </div>
@@ -214,13 +214,13 @@ function Hero({
           )}
 
           {totals.unexplained > 0 && (
-            <p className="mt-4 text-sm text-ink/75">
+            <p className="mt-4 text-sm text-soft">
               {totals.unexplained} {totals.unexplained === 1 ? "gap has" : "gaps have"} no reason yet. Tap a square below to add one — no judgment.
             </p>
           )}
 
           {partial && startedOn && (
-            <p className="mt-3 text-xs text-ink/65">Counting from {shortDate(startedOn)}, your first day.</p>
+            <p className="mt-3 text-xs text-soft">Counting from {shortDate(startedOn)}, your first day.</p>
           )}
         </>
       )}
@@ -233,7 +233,7 @@ function Noticing({ links }: { links: Link[] }) {
   if (links.length === 0) return null;
   return (
     <section className="card p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/60">Worth noticing</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-soft">Worth noticing</p>
       <ul className="mt-2 flex flex-col gap-2.5">
         {links.map((l) => (
           <li key={l.text} className="text-[15px] leading-snug">
@@ -241,17 +241,17 @@ function Noticing({ links }: { links: Link[] }) {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-[11px] text-ink/60">From your last 90 days. What went together so far, not proof of cause.</p>
+      <p className="mt-3 text-xs text-soft">From your last 90 days. What went together so far, not proof of cause.</p>
     </section>
   );
 }
 
 function Stat({ kicker, value, caption }: { kicker: string; value: string; caption: string }) {
   return (
-    <div className="rounded-2xl bg-white/60 px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-ink/60">{kicker}</p>
+    <div className="rounded-2xl bg-surface/60 px-3 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-soft">{kicker}</p>
       <p className="mt-0.5 text-2xl font-semibold tabular-nums leading-none">{value}</p>
-      <p className="mt-1 text-[11px] leading-tight text-ink/65">{caption}</p>
+      <p className="mt-1 text-xs leading-tight text-soft">{caption}</p>
     </div>
   );
 }
@@ -260,9 +260,9 @@ function Stat({ kicker, value, caption }: { kicker: string; value: string; capti
 
 const CELL: Record<CellState, string> = {
   done: "bg-ink text-cream",
-  slipped: "bg-bad text-[#2b2946]",
-  blank: "border border-dashed border-ink/40 bg-white/50 text-ink/50",
-  open: "border border-ink/25 bg-white text-ink/50",
+  slipped: "bg-bad text-onpastel",
+  blank: "border border-dashed border-ink/40 bg-surface/50 text-soft",
+  open: "border border-ink/25 bg-surface text-soft",
   off: "bg-ink/5 text-ink/25",
   extra: "bg-ink/40 text-cream",
 };
@@ -283,7 +283,7 @@ function Legend() {
     ["off", "Not planned"],
   ];
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-[11px] text-ink/60">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-soft">
       {items.map(([st, label]) => (
         <span key={st} className="flex items-center gap-1.5">
           <i className={`inline-block size-3 rounded-[3px] ${CELL[st]}`} />
@@ -304,7 +304,7 @@ function Squares({ cells, compact, onPick }: { cells: Cell[]; compact: boolean; 
           onClick={() => onPick(c.date)}
           aria-label={`${shortDate(c.date)}: ${CELL_WORD[c.state]}`}
           title={`${shortDate(c.date)} · ${CELL_WORD[c.state]}`}
-          className={`min-w-0 flex-1 rounded-md text-[10px] font-medium transition-transform active:scale-90 ${
+          className={`min-w-0 flex-1 rounded-md text-[11px] font-medium transition-transform active:scale-90 ${
             compact ? "h-4" : "h-8"
           } ${CELL[c.state]}`}
         >
@@ -338,7 +338,7 @@ function Row({
           <Icon size={18} strokeWidth={1.8} />
         </span>
         <h2 className="min-w-0 flex-1 truncate text-base font-semibold">{row.title}</h2>
-        <span className="shrink-0 rounded-full bg-ink/5 px-2.5 py-1 text-[11px] font-medium text-ink/65">{row.schedule}</span>
+        <span className="shrink-0 rounded-full bg-ink/5 px-2.5 py-1 text-xs font-medium text-soft">{row.schedule}</span>
       </header>
 
       <div className="mt-3">
@@ -346,7 +346,7 @@ function Row({
       </div>
 
       {/* the line this row is measured against, so a "slip" is never a mystery */}
-      <p className="mt-2 text-[11px] text-ink/60">
+      <p className="mt-2 text-xs text-soft">
         {row.rules.length > 0 ? (
           <>Slips if: {row.rules.join(" · ")}</>
         ) : (
@@ -359,11 +359,11 @@ function Row({
         )}
       </p>
       {row.rulesChangedOn && (
-        <p className="mt-1 text-[11px] text-ink/60">Rules changed {shortDate(row.rulesChangedOn)}. Earlier days keep the old ones.</p>
+        <p className="mt-1 text-xs text-soft">Rules changed {shortDate(row.rulesChangedOn)}. Earlier days keep the old ones.</p>
       )}
 
       {row.planned === 0 ? (
-        <p className="mt-3 text-sm text-ink/60">Nothing planned in this window yet.</p>
+        <p className="mt-3 text-sm text-soft">Nothing planned in this window yet.</p>
       ) : (
         <dl className="mt-3 space-y-1.5 text-sm">
           <Line label="Reality">
@@ -374,7 +374,7 @@ function Row({
             <Line label="Reason">
               {row.reasons.length > 0 && row.reasons.map((r) => `${r.label} ×${r.n}`).join(" · ")}
               {row.reasons.length > 0 && row.unexplained > 0 && " · "}
-              {row.unexplained > 0 && <span className="text-ink/60">{row.unexplained} unexplained</span>}
+              {row.unexplained > 0 && <span className="text-soft">{row.unexplained} unexplained</span>}
               {row.reasons.length === 0 && row.unexplained === 0 && "Noted in your words."}
             </Line>
           )}
@@ -383,7 +383,7 @@ function Row({
 
       {row.where.length > 0 && (
         <p className="mt-3 text-sm">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-ink/50">Where it went</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-soft">Where it went</span>
           <br />
           {row.where.map((w) => `${w.label} ${w.amount}`).join(" · ")}
         </p>
@@ -392,9 +392,9 @@ function Row({
       {row.notes.length > 0 && (
         <ul className="mt-3 space-y-1.5 border-t border-ink/10 pt-3">
           {row.notes.map((n) => (
-            <li key={n.date} className="text-[13px] leading-snug text-ink/80">
+            <li key={n.date} className="text-[13px] leading-snug text-ink/85">
               “{n.text.length > 140 ? `${n.text.slice(0, 140)}…` : n.text}”{" "}
-              <span className="text-ink/50">— {shortDate(n.date)}</span>
+              <span className="text-soft">— {shortDate(n.date)}</span>
             </li>
           ))}
         </ul>
@@ -406,7 +406,7 @@ function Row({
 function Line({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
-      <dt className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wider text-ink/50 pt-0.75">{label}</dt>
+      <dt className="w-16 shrink-0 text-xs font-semibold uppercase tracking-wider text-soft pt-0.75">{label}</dt>
       <dd className="min-w-0 flex-1 text-ink/90">{children}</dd>
     </div>
   );
@@ -439,15 +439,15 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
   return (
     <section className="tile tile-lilac p-5">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-ink/70">Your last {WEEKS} weeks</p>
-        <div className="flex rounded-full border border-ink/10 bg-white/70 p-0.5 text-xs font-medium">
+        <p className="text-xs font-medium uppercase tracking-wider text-soft">Your last {WEEKS} weeks</p>
+        <div className="flex rounded-full border border-ink/10 bg-surface/70 p-0.5 text-xs font-medium">
           {(["progress", "mood"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => setMode(m)}
               className={`rounded-full px-3 py-1 capitalize transition-colors ${
-                mode === m ? "bg-ink text-cream" : "text-ink/75 hover:text-ink"
+                mode === m ? "bg-ink text-cream" : "text-soft hover:text-ink"
               }`}
             >
               {m}
@@ -456,9 +456,9 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl bg-white/70 p-4">
+      <div className="mt-4 rounded-2xl bg-surface/70 p-4">
         <div className="flex gap-3">
-          <div className="flex shrink-0 flex-col gap-1.25 pt-0.75 text-[10px] leading-none text-ink/55">
+          <div className="flex shrink-0 flex-col gap-1.25 pt-0.75 text-[11px] leading-none text-soft">
             {WEEKDAYS.map((d, i) => (
               <span key={d} className="flex h-4.25 items-center">
                 {i % 2 === 0 ? d : ""}
@@ -494,7 +494,7 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
             ))}
           </div>
         </div>
-        <p className="mt-3 text-[11px] text-ink/60">Darker = more of what you planned that day. Tap a day to open it.</p>
+        <p className="mt-3 text-xs text-soft">A stronger colour = more of what you planned that day. Tap a day to open it.</p>
       </div>
     </section>
   );

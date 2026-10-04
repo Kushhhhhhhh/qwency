@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { THEME_COLOR, THEME_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -33,16 +34,40 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FDF8E2",
-  colorScheme: "light",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
+  ],
+  colorScheme: "light dark",
   width: "device-width",
   initialScale: 1,
 };
 
+// Clerk's sign-in card and avatar menu take the app's colours, so they follow light / dark too
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "var(--color-ink)",
+    colorBackground: "var(--color-surface)",
+    colorText: "var(--color-ink)",
+    colorTextSecondary: "var(--color-soft)",
+    colorTextOnPrimaryBackground: "var(--color-cream)",
+    colorInputBackground: "var(--color-surface)",
+    colorInputText: "var(--color-ink)",
+    colorNeutral: "var(--color-ink)",
+    colorDanger: "var(--color-danger)",
+    colorSuccess: "var(--color-good)",
+    borderRadius: "1rem",
+  },
+};
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <ClerkProvider>
-      <html lang="en" className={`${geistSans.variable} h-full`}>
+    <ClerkProvider appearance={clerkAppearance}>
+      {/* data-theme is set by the script below before anything is drawn, so React must leave it alone */}
+      <html lang="en" data-theme="light" suppressHydrationWarning className={`${geistSans.variable} h-full`}>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        </head>
         <body className="min-h-full flex flex-col">
           {children}
           {/* page-speed numbers from real visits (loads after the page is interactive, collects no personal data) */}

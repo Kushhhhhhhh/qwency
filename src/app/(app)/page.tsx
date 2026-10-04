@@ -24,6 +24,7 @@ export default async function Home() {
   return (
     <Tracker
       snapshot={snapshot}
+      userId={userId}
       today={todayIn(zone, now)}
       hour={hourIn(zone, now)}
       dismissed={parseDismissed(jar.get(DISMISS_COOKIE)?.value)}

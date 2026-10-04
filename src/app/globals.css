@@ -1,12 +1,32 @@
 @import "tailwindcss";
 
-@theme inline {
+/* `dark:` follows the app's own switch (data-theme on <html>), not just the device setting */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Colours are variables (not baked into the classes), so a theme can swap them:
+ *   ink      text, outlines and filled controls (a selected chip is ink with cream text)
+ *   cream    the page; in dark it is the deep background, and "text on ink" stays readable
+ *   soft     quieter text (hints, captions). Always at least 4.5:1 on the surface it sits on
+ *   surface  what "white" panels are made of
+ *   shade    the tint of shadows
+ * lilac / good / meh / bad keep their meaning in both themes; onpastel is the text that sits on them.
+ */
+@theme {
   --color-lilac: #c4c3e3;
   --color-ink: #504e76;
   --color-cream: #fdf8e2;
   --color-good: #a3b565;
   --color-meh: #fcdd9d;
   --color-bad: #f1642e;
+  --color-soft: #6a688c;
+  --color-surface: #ffffff;
+  --color-shade: #504e76;
+  --color-danger: #c2410c;
+  --color-onpastel: #1f1d38;
+}
+
+@theme inline {
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
 }
 
@@ -14,6 +34,23 @@ html {
   background: var(--color-cream);
   /* keep the page from shifting sideways when a scrollbar appears */
   scrollbar-gutter: stable;
+  --wash-a: color-mix(in oklab, var(--color-lilac) 55%, transparent);
+  --wash-b: color-mix(in oklab, var(--color-meh) 60%, transparent);
+}
+
+/* ---- dark: the same palette after sundown ---- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-cream: #17161f;
+  --color-ink: #ebe8f7;
+  --color-soft: #b4b1d0;
+  --color-surface: #2a2940;
+  --color-shade: #000000;
+  --color-danger: #ff8a62;
+  /* quieter lilac for small accents (icon bubbles, selection); the big tiles bring their own */
+  --color-lilac: #5b5990;
+  --wash-a: color-mix(in oklab, #6f6db0 22%, transparent);
+  --wash-b: color-mix(in oklab, #fcdd9d 5%, transparent);
 }
 
 body {
@@ -31,27 +68,44 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(60rem 30rem at 0% -10%, color-mix(in oklab, var(--color-lilac) 55%, transparent), transparent 70%),
-    radial-gradient(40rem 26rem at 110% 105%, color-mix(in oklab, var(--color-meh) 60%, transparent), transparent 70%);
+    radial-gradient(60rem 30rem at 0% -10%, var(--wash-a), transparent 70%),
+    radial-gradient(40rem 26rem at 110% 105%, var(--wash-b), transparent 70%);
 }
 
 ::selection { background: var(--color-lilac); }
 
 /* ---- surfaces ---- */
 .card {
-  background: color-mix(in oklab, white 72%, transparent);
+  background: color-mix(in oklab, var(--color-surface) 72%, transparent);
   border: 1px solid color-mix(in oklab, var(--color-ink) 10%, transparent);
   border-radius: 1.5rem;
-  box-shadow: 0 1px 2px rgb(80 78 118 / 0.04), 0 8px 24px -12px rgb(80 78 118 / 0.14);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--color-shade) 4%, transparent), 0 8px 24px -12px color-mix(in oklab, var(--color-shade) 14%, transparent);
+}
+html[data-theme="dark"] .card {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25), 0 10px 26px -14px rgb(0 0 0 / 0.5);
 }
 
 /* Flat, fully-colored panels for the Today and Patterns section cards — cycled across the
    palette for visual rhythm (not tied to good/meh/bad meaning, which stays reserved for
-   actual answers and data, e.g. the mood buttons and the Stats tile values). */
+   actual answers and data, e.g. the mood buttons and the Stats tile values).
+   They are the same soft pastels in both themes, so inside one the colours go back to the light
+   palette (a touch deeper, so text clears 4.5:1 even on the olive one). */
 .tile {
+  --color-ink: #35335a;
+  --color-soft: #3c3a62;
+  --color-cream: #fdf8e2;
+  --color-surface: #ffffff;
+  --color-shade: #504e76;
+  --color-lilac: #c4c3e3;
+  --color-danger: #721f03;
+  color: var(--color-ink);
+  color-scheme: light;
   border: none;
   border-radius: 1.75rem;
   box-shadow: 0 1px 2px rgb(80 78 118 / 0.05), 0 6px 18px -10px rgb(80 78 118 / 0.28);
+}
+html[data-theme="dark"] .tile {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
 .tile-lilac { background: var(--color-lilac); }
 .tile-meh { background: var(--color-meh); }
@@ -62,7 +116,7 @@ body::before {
 @layer components {
   .chip {
     border: 1px solid color-mix(in oklab, var(--color-ink) 16%, transparent);
-    background: color-mix(in oklab, white 70%, transparent);
+    background: color-mix(in oklab, var(--color-surface) 70%, transparent);
     transition: transform 140ms cubic-bezier(0.3, 1.5, 0.5, 1), background-color 160ms, border-color 160ms, color 160ms;
   }
   .chip:hover { border-color: color-mix(in oklab, var(--color-ink) 45%, transparent); }

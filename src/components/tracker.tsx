@@ -3,7 +3,7 @@
 import { Suspense, startTransition, use, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import dynamic from "next/dynamic";
 import { loadSnapshot, patchData, saveFocus, saveNote, savePlan, saveSpec, saveTags, setMood } from "@/app/actions";
-import { EMPTY_PLAN, type MonthPlan } from "@/lib/goals";
+import type { MonthPlan } from "@/lib/goals";
 import {
   breakdownOf,
   customId,
@@ -36,6 +36,8 @@ import {
   type Mood,
 } from "@/lib/tracker";
 import { TZ_COOKIE } from "@/lib/clock";
+import { emptyBox, isEmpty, overlayEntries, overlayFocus, overlayPlans, pendingOps, queue, settle, waitingKeys, type Box, type Op } from "@/lib/outbox";
+import { readBox, writeBox } from "@/lib/outbox-store";
 import { whenIdle } from "@/lib/idle";
 import { useStable } from "@/lib/use-stable";
 import { RECENT_DAYS, type Snapshot } from "@/lib/snapshot";
@@ -48,6 +50,7 @@ import { NoteField } from "./note-field";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
 import { Nav, TabSkeleton, TodayShell, type Tab } from "./shell";
 import { ProgressRing } from "./ui";
+import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
 const CHEERS: Record<Mood, string[]> = {
@@ -103,12 +106,12 @@ function Toast({ api }: { api: Ref<ToastApi> }) {
     <div
       key={status.id}
       role="status"
-      className={`toast-in fixed bottom-24 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow-lg shadow-ink/20 ${
+      className={`toast-in fixed bottom-24 left-1/2 z-20 -translate-x-1/2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium shadow-lg shadow-shade/20 ${
         status.kind === "error"
-          ? "bg-bad text-[#2b2946]"
+          ? "bg-bad text-onpastel"
           : status.kind === "saved"
             ? "bg-ink text-cream"
-            : "bg-white text-ink"
+            : "bg-surface text-ink"
       }`}
     >
       {status.text}
@@ -116,9 +119,25 @@ function Toast({ api }: { api: Ref<ToastApi> }) {
   );
 }
 
-// Which piece of a day a save was for, so a failed one can be re-sent on its own later.
-type Part = "data" | "mood" | "tags" | "note" | "focus" | "plan";
-const PART_ORDER: Part[] = ["data", "mood", "tags", "note", "focus", "plan"];
+/** Send one change to the server. */
+function exec(op: Op): Promise<{ ok: boolean }> {
+  switch (op.kind) {
+    case "data":
+      return patchData(op.date, op.set, op.remove);
+    case "mood":
+      return setMood(op.date, op.mood);
+    case "tags":
+      return saveTags(op.date, op.tags);
+    case "note":
+      return saveNote(op.date, op.note);
+    case "focus":
+      return saveFocus(op.month, op.text);
+    case "plan":
+      return savePlan(op.month, op.plan);
+  }
+}
+
+const NOT_SAVED = "Not saved yet. Will retry.";
 const SYNC_GAP_MS = 15_000; // returning to the app twice in a row shouldn't hit the server twice
 
 /**
@@ -127,23 +146,37 @@ const SYNC_GAP_MS = 15_000; // returning to the app twice in a row shouldn't hit
  */
 export function Tracker({
   snapshot,
+  userId,
   today,
   hour,
   dismissed,
 }: {
   snapshot: Promise<Snapshot>;
+  userId: string;
   today: string;
   hour: number;
   dismissed: string[];
 }) {
   return (
     <Suspense fallback={<TodayShell dateText={prettyDate(today)} />}>
-      <TrackerLoaded snapshot={snapshot} today={today} hour={hour} dismissed={dismissed} />
+      <TrackerLoaded snapshot={snapshot} userId={userId} today={today} hour={hour} dismissed={dismissed} />
     </Suspense>
   );
 }
 
-function TrackerLoaded({ snapshot, today, hour, dismissed }: { snapshot: Promise<Snapshot>; today: string; hour: number; dismissed: string[] }) {
+function TrackerLoaded({
+  snapshot,
+  userId,
+  today,
+  hour,
+  dismissed,
+}: {
+  snapshot: Promise<Snapshot>;
+  userId: string;
+  today: string;
+  hour: number;
+  dismissed: string[];
+}) {
   const snap = use(snapshot);
   if (!snap.spec) return <Welcome />; // a new account picks what to track before anything else
   return (
@@ -152,6 +185,7 @@ function TrackerLoaded({ snapshot, today, hour, dismissed }: { snapshot: Promise
       initialFocus={snap.focuses}
       initialPlans={snap.plans}
       initialSpec={snap.spec}
+      userId={userId}
       initialToday={today}
       initialHour={hour}
       dismissed={dismissed}
@@ -164,6 +198,7 @@ function TrackerView({
   initialFocus,
   initialPlans,
   initialSpec,
+  userId,
   initialToday,
   initialHour,
   dismissed,
@@ -172,6 +207,7 @@ function TrackerView({
   initialFocus: Record<string, string>;
   initialPlans: Record<string, MonthPlan>;
   initialSpec: HabitSpec;
+  userId: string;
   initialToday: string;
   initialHour: number;
   dismissed: string[];
@@ -201,9 +237,10 @@ function TrackerView({
   const [dayRev, setDayRev] = useState(0);
   // the hour of day, so Today can say "it's evening" without anyone refreshing
   const [hour, setHour] = useState(initialHour);
-  // Saves that never reached the server ("date|part"). A refresh must never overwrite a day
-  // whose only up-to-date copy is on this screen.
-  const failed = useRef(new Set<string>());
+  // What you changed that the server hasn't confirmed: kept in this browser too (see lib/outbox), so it
+  // outlives a dropped connection, a closed tab or a killed app. A refresh never overwrites these days.
+  const box = useRef<Box>(emptyBox());
+  const flushing = useRef(false);
   const pending = useRef(0); // saves in flight
   const mutations = useRef(0); // bumped on every local edit, so a slow refresh can tell it's stale
   const syncing = useRef(false);
@@ -272,45 +309,62 @@ function TrackerView({
     setSelected(next.selected);
   }
 
-  /** Re-send anything that failed earlier (e.g. you were offline), oldest kind first. */
-  async function flushFailed() {
-    const todo = [...failed.current].sort(
-      (a, b) => PART_ORDER.indexOf(a.split("|")[1] as Part) - PART_ORDER.indexOf(b.split("|")[1] as Part),
-    );
-    for (const fk of todo) {
-      const [key, part] = fk.split("|") as [string, Part];
-      const e = entriesRef.current[key];
-      let job: (() => Promise<{ ok: boolean }>) | null = null;
-      if (part === "focus") {
-        const month = key.slice("focus:".length);
-        job = () => saveFocus(month, focusRef.current[month] ?? "");
-      } else if (part === "plan") {
-        const month = key.slice("plan:".length);
-        job = () => savePlan(month, plansRef.current[month] ?? EMPTY_PLAN);
-      } else if (e && part === "data") job = () => patchData(key, e.data, []); // all this screen knows about the day
-      else if (e && part === "mood") job = () => setMood(key, e.mood);
-      else if (e && part === "tags") job = () => saveTags(key, e.tags);
-      else if (e && part === "note") job = () => saveNote(key, e.note);
-      if (!job) {
-        failed.current.delete(fk);
-        continue;
-      }
-      pending.current++;
-      let ok = false;
-      try {
-        ok = (await job()).ok;
-      } catch {
-        ok = false;
-      }
-      pending.current--;
-      if (!ok) return; // still offline: stop here instead of hammering
-      failed.current.delete(fk);
+  /** A line in the little pill at the bottom of the screen. */
+  function say(kind: Status["kind"], text: string) {
+    toast.current?.say(kind, text);
+  }
+
+  /** Record a change in the outbox (here and in this browser's storage). Reads storage first, so a second open tab's changes aren't lost. */
+  function commit(change: (b: Box) => Box) {
+    const next = change(readBox(userId) ?? box.current);
+    box.current = next;
+    writeBox(userId, next, isEmpty(next));
+  }
+
+  /** One send. Crosses the change off the outbox when the server confirms it, and only then. */
+  async function deliver(op: Op): Promise<boolean> {
+    pending.current++;
+    let ok = false;
+    try {
+      ok = (await exec(op)).ok;
+    } catch {
+      ok = false;
     }
+    pending.current--;
+    if (ok) commit((b) => settle(b, op));
+    return ok;
+  }
+
+  /**
+   * Send everything that's waiting, oldest first, and stop at the first failure (still offline: no point
+   * hammering). Returns "done" when it sent something and nothing is left, "still" when something is still
+   * waiting, "idle" when there was nothing to do.
+   */
+  async function flushOutbox(): Promise<"done" | "still" | "idle"> {
+    if (flushing.current || pending.current > 0) return "idle";
+    const ops = pendingOps(readBox(userId) ?? box.current);
+    if (ops.length === 0) return "idle";
+    flushing.current = true;
+    for (const op of ops) {
+      if (!(await deliver(op))) {
+        flushing.current = false;
+        return "still";
+      }
+    }
+    flushing.current = false;
+    return "done";
+  }
+
+  /** Retry what's waiting and tell the person how it went (`loud`: also say so when it still can't be sent). */
+  async function flushWaiting(loud: boolean) {
+    const result = await flushOutbox();
+    if (result === "done") say("saved", "Caught up. Everything is saved.");
+    else if (result === "still" && loud) say("error", NOT_SAVED);
   }
 
   /** Fold a fresh read into the screen. The rules for what wins live in lib/sync; unsaved work is never thrown away. */
   function applySnapshot(snap: Snapshot) {
-    const keep = new Set([...failed.current].map((f) => f.split("|")[0]));
+    const keep = waitingKeys(readBox(userId) ?? box.current);
     const local = entriesRef.current;
     const merged = mergeEntries(local, snap.entries, keep); // `local` itself when nothing changed
     const sel = selectedRef.current;
@@ -345,7 +399,8 @@ function TrackerView({
     let snap: Snapshot | null = null;
     let seen = 0;
     try {
-      await flushFailed();
+      const result = await flushOutbox();
+      if (result === "done") say("saved", "Caught up. Everything is saved.");
       if (pending.current > 0) return;
       seen = mutations.current;
       snap = await loadSnapshot(days);
@@ -375,9 +430,15 @@ function TrackerView({
     setHour(new Date().getHours()); // same value = no re-render
   }
 
-  const live = useRef({ roll, sync, clock });
+  // a quiet retry each minute while something is waiting (a bad signal that's since come back)
+  function retry() {
+    if (syncing.current || isEmpty(readBox(userId) ?? box.current)) return;
+    void flushWaiting(false);
+  }
+
+  const live = useRef({ roll, sync, clock, retry, flush: () => flushWaiting(true) });
   useEffect(() => {
-    live.current = { roll, sync, clock };
+    live.current = { roll, sync, clock, retry, flush: () => flushWaiting(true) };
   });
   useEffect(() => {
     const wake = () => {
@@ -392,6 +453,7 @@ function TrackerView({
       if (document.visibilityState !== "visible") return;
       live.current.roll(false);
       live.current.clock();
+      live.current.retry();
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
@@ -407,37 +469,38 @@ function TrackerView({
     };
   }, []);
 
+  // changes from an earlier visit that never reached the server: show them again and send them now
+  useEffect(() => {
+    const waiting = readBox(userId);
+    if (!waiting || isEmpty(waiting)) return;
+    box.current = waiting;
+    mutations.current++;
+    setEntries((prev) => overlayEntries(prev, waiting));
+    setFocuses((prev) => overlayFocus(prev, waiting));
+    setPlans((prev) => overlayPlans(prev, waiting));
+    if (selectedRef.current in waiting.days) setDayRev((r) => r + 1); // note boxes read their text once
+    void live.current.flush();
+  }, []);
+
   // ---- saving: UI updates first, server catches up in the background ----
-  function say(kind: Status["kind"], text: string) {
-    toast.current?.say(kind, text);
-  }
-
-  // Every save goes through here. It counts what's in flight (a refresh waits for it) and
-  // remembers what failed, so it can be re-sent instead of silently lost. Next dispatches Server
+  // Every save goes through here. It is written to the outbox *before* it is sent, so even a closed tab
+  // or a dead connection can't lose it, and crossed off when the server confirms. Next dispatches Server
   // Actions one at a time per client, so saves reach the server in the order they were made.
-  async function send(key: string, part: Part | null, job: () => Promise<{ ok: boolean }>): Promise<boolean> {
-    pending.current++;
-    let ok = false;
-    try {
-      ok = (await job()).ok;
-    } catch {
-      ok = false;
-    }
-    pending.current--;
-    if (!ok && part) failed.current.add(`${key}|${part}`);
-    return ok;
+  async function send(op: Op): Promise<boolean> {
+    commit((b) => queue(b, op, Date.now()));
+    return deliver(op);
   }
 
-  async function persist(key: string, part: Part, job: () => Promise<{ ok: boolean }>, okText = "Saved") {
+  async function persist(op: Op, okText = "Saved") {
     say("saving", "Saving…");
-    if (await send(key, part, job)) say("saved", okText);
-    else say("error", "Not saved. Check your connection.");
+    if (await send(op)) say("saved", okText);
+    else say("error", NOT_SAVED);
   }
 
   // For typing-driven saves: never pop a toast, only speak up if it failed.
-  async function persistQuiet(key: string, part: Part, job: () => Promise<{ ok: boolean }>): Promise<boolean> {
-    const ok = await send(key, part, job);
-    if (!ok) say("error", "Not saved. Check your connection.");
+  async function persistQuiet(op: Op): Promise<boolean> {
+    const ok = await send(op);
+    if (!ok) say("error", NOT_SAVED);
     return ok;
   }
 
@@ -467,7 +530,7 @@ function TrackerView({
     const date = selected;
     haptic(8);
     const text = change({ ...cur, data: clean });
-    persist(date, "data", () => patchData(date, set, remove), text);
+    persist({ kind: "data", date, set, remove }, text);
   }
 
   // "why did this slip" tags for a field live under a companion key in the same `data` blob —
@@ -488,17 +551,22 @@ function TrackerView({
     const { set, remove } = diffData(cur.data, clean);
     if (Object.keys(set).length === 0 && remove.length === 0) return true; // nothing actually changed
     mutate((prev) => ({ ...prev, [date]: { ...(prev[date] ?? EMPTY_ENTRY), data: clean } }));
-    return persistQuiet(date, "data", () => patchData(date, set, remove));
+    return persistQuiet({ kind: "data", date, set, remove });
   }
 
   async function saveSetup(next: HabitSpec): Promise<boolean> {
     // not remembered for re-sending: Setup keeps your draft on a failure, and the Save pill says so
     let saved: HabitSpec | undefined;
-    const ok = await send("spec", null, async () => {
+    pending.current++;
+    let ok = false;
+    try {
       const res = await saveSpec(next, localKey(new Date()));
       saved = res.spec;
-      return res;
-    });
+      ok = res.ok;
+    } catch {
+      ok = false;
+    }
+    pending.current--;
     // what the server kept, history included, so Patterns judges the past by the rules it had
     if (ok) {
       setSpec(saved ?? next);
@@ -530,7 +598,7 @@ function TrackerView({
     const date = selected;
     haptic(next === "bad" ? 24 : 12);
     const text = change({ ...cur, mood: next, tags: next === "bad" ? cur.tags : [] });
-    persist(date, "mood", () => setMood(date, next), next ? (text === "Saved" ? CHEERS[next][Math.floor(Math.random() * CHEERS[next].length)] : text) : "Cleared");
+    persist({ kind: "mood", date, mood: next }, next ? (text === "Saved" ? CHEERS[next][Math.floor(Math.random() * CHEERS[next].length)] : text) : "Cleared");
   }
 
   // functional updates: these can fire late (debounce / unmount), so never trust a captured entry
@@ -543,25 +611,25 @@ function TrackerView({
     const date = selected;
     haptic(6);
     patchDay(date, { tags });
-    persist(date, "tags", () => saveTags(date, tags), "Reason saved");
+    persist({ kind: "tags", date, tags }, "Reason saved");
   }
 
   function pickNote(note: string) {
     if (!selected) return Promise.resolve(false);
     const date = selected;
     patchDay(date, { note });
-    return persistQuiet(date, "note", () => saveNote(date, note));
+    return persistQuiet({ kind: "note", date, note });
   }
 
   function pickFocus(month: string, text: string) {
     setFocuses((prev) => ({ ...prev, [month]: text }));
-    persistQuiet(`focus:${month}`, "focus", () => saveFocus(month, text));
+    persistQuiet({ kind: "focus", month, text });
   }
 
   // a month's goals / review: same quiet save + retry-if-it-failed path as the focus line
   function pickPlan(month: string, plan: MonthPlan) {
     setPlans((prev) => ({ ...prev, [month]: plan }));
-    persistQuiet(`plan:${month}`, "plan", () => savePlan(month, plan));
+    persistQuiet({ kind: "plan", month, plan });
   }
 
   // FieldView skips re-drawing unless its own answer changed, which only works if the handlers it is
@@ -593,7 +661,7 @@ function TrackerView({
                     ? "Today"
                     : "Earlier"}
           </h1>
-          <p className="truncate text-sm text-ink/60">
+          <p className="truncate text-sm text-soft">
             {tab === "patterns"
               ? "What your days add up to"
               : tab === "journal"
@@ -605,6 +673,7 @@ function TrackerView({
                     : " "}
           </p>
         </div>
+        <ThemeToggle />
         {tab === "today" && selected && (
           <ProgressRing value={dayDone(entry, selected, view)} total={dayTotal(view, selected)} />
         )}

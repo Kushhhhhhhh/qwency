@@ -27,7 +27,7 @@ import { Chip } from "./ui";
 
 type Save = "idle" | "saving" | "saved" | "error";
 const inputBase =
-  "rounded-xl border border-ink/15 bg-white/70 px-3 py-2 text-sm outline-none transition-colors focus:border-ink";
+  "rounded-xl border border-ink/15 bg-surface/70 px-3 py-2 text-sm outline-none transition-colors focus:border-ink";
 const input = `w-full ${inputBase}`;
 const select = `${input} appearance-none`;
 
@@ -110,9 +110,9 @@ export function Setup({
   return (
     <div className="flex flex-col gap-4 pb-24">
       <section className="card p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-ink/50">Setup</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-soft">Setup</p>
         <h2 className="mt-1 text-base font-semibold">What you track each day</h2>
-        <p className="mt-1 text-sm text-ink/60">
+        <p className="mt-1 text-sm text-soft">
           Change what your day tracks. Changing a rule counts from today on, so past days keep the
           rule they had; a rule you set for the first time covers days already logged. The overall
           verdict stays fixed for everyone so patterns stay comparable.
@@ -121,7 +121,7 @@ export function Setup({
           <button
             type="button"
             onClick={() => setDraft(DEFAULT_SPEC)}
-            className="flex items-center gap-1 text-sm text-ink/50 hover:text-ink"
+            className="flex items-center gap-1 text-sm text-soft hover:text-ink"
           >
             <RotateCcw size={14} /> Reset to default
           </button>
@@ -152,18 +152,18 @@ export function Setup({
         <Plus size={16} /> Add section
       </button>
       {draft.sections.length >= LIMITS.sections && (
-        <p className="text-center text-xs text-ink/45">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
+        <p className="text-center text-xs text-soft">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
       )}
 
       {/* follows you down the page once there's something to save — no scrolling back up,
           and it just quietly disappears on a successful save instead of popping a toast */}
       {(dirty || save === "saving" || save === "error") && (
-        <div className="toast-in fixed bottom-24 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full border border-ink/10 bg-white/90 py-2 pl-4 pr-2 shadow-xl shadow-ink/20 backdrop-blur-md">
-          <span className={`text-sm font-medium ${save === "error" ? "text-bad" : "text-ink/70"}`}>
+        <div className="toast-in fixed bottom-24 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 whitespace-nowrap rounded-full border border-ink/10 bg-surface/90 py-2 pl-4 pr-2 shadow-xl shadow-shade/20 backdrop-blur-md">
+          <span className={`text-sm font-medium ${save === "error" ? "text-danger" : "text-soft"}`}>
             {save === "error" ? "Couldn't save, try again" : "Unsaved changes"}
           </span>
           {save !== "saving" && (
-            <button type="button" onClick={() => setDraft(spec)} className="text-sm text-ink/50 underline underline-offset-2 hover:text-ink">
+            <button type="button" onClick={() => setDraft(spec)} className="text-sm text-soft underline underline-offset-2 hover:text-ink">
               Discard
             </button>
           )}
@@ -171,7 +171,7 @@ export function Setup({
             type="button"
             onClick={handleSave}
             disabled={save === "saving"}
-            className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-cream shadow-md shadow-ink/30 transition-opacity disabled:opacity-60"
+            className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-cream shadow-md shadow-shade/30 transition-opacity disabled:opacity-60"
           >
             {save === "saving" ? "Saving…" : "Save"}
           </button>
@@ -241,13 +241,13 @@ function SectionEditor({
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold leading-tight">{section.title || "Untitled"}</h2>
-          <p className="truncate text-xs text-ink/55">
+          <p className="truncate text-xs text-soft">
             {section.hint ? `${section.hint} · ` : ""}
             {section.fields.length} question{section.fields.length === 1 ? "" : "s"} · {scheduleLabel(section.days)}
             {!canSlip(section) && " · no target yet"}
           </p>
         </div>
-        <ChevronDown size={18} className={`shrink-0 text-ink/50 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
+        <ChevronDown size={18} className={`shrink-0 text-soft transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
       {/* built the first time it opens: a closed section costs one empty box, not a whole editor */}
@@ -304,7 +304,7 @@ function SectionEditor({
                 <button type="button" onClick={() => onMove(1)} disabled={index === total - 1} className="chip rounded-full px-2.5 py-1.5 text-xs disabled:opacity-30">
                   Move down
                 </button>
-                <button type="button" onClick={onRemove} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-bad/80 hover:text-bad">
+                <button type="button" onClick={onRemove} className="flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs text-danger hover:brightness-90">
                   <Trash2 size={12} /> Remove
                 </button>
               </div>
@@ -332,7 +332,7 @@ function ScheduleEditor({ days, onChange }: { days: number[]; onChange: (days: n
 
   return (
     <div className="mt-4">
-      <p className="mb-2 text-xs font-medium text-ink/60">When do you track this?</p>
+      <p className="mb-2 text-xs font-medium text-soft">When do you track this?</p>
       <div className="flex flex-wrap gap-1.5">
         {presets.map(([id, label, value]) => (
           <Chip
@@ -366,7 +366,7 @@ function ScheduleEditor({ days, onChange }: { days: number[]; onChange: (days: n
                   const next = on ? days.filter((x) => x !== i) : [...days, i].sort((a, b) => a - b);
                   if (next.length > 0) onChange(next); // a section planned on no days would never be expected
                 }}
-                className={`chip h-9 min-w-0 flex-1 rounded-full text-[11px] font-medium ${on ? "bg-ink text-cream" : "text-ink"}`}
+                className={`chip h-9 min-w-0 flex-1 rounded-full text-xs font-medium ${on ? "bg-ink text-cream" : "text-ink"}`}
               >
                 {d}
               </button>
@@ -374,7 +374,7 @@ function ScheduleEditor({ days, onChange }: { days: number[]; onChange: (days: n
           })}
         </div>
       )}
-      <p className="mt-2 text-[11px] text-ink/55">Days it isn't planned won't count as missed.</p>
+      <p className="mt-2 text-xs text-soft">Days it isn't planned won't count as missed.</p>
     </div>
   );
 }
@@ -478,7 +478,7 @@ function FieldEditor({
             <ChevronDown size={14} />
           </button>
           {onRemove && (
-            <button type="button" onClick={onRemove} aria-label="Remove question" className="chip flex size-8 items-center justify-center rounded-full text-bad/80">
+            <button type="button" onClick={onRemove} aria-label="Remove question" className="chip flex size-8 items-center justify-center rounded-full text-danger">
               <Trash2 size={14} />
             </button>
           )}
@@ -525,7 +525,7 @@ function FieldEditor({
               Unit
               <input value={field.unit} maxLength={20} onChange={(e) => onChange({ unit: e.target.value })} className={`${input} w-24 py-1`} />
             </label>
-            <p className="w-full text-[11px] text-ink/55">Falling short counts as a slip once the day is over.</p>
+            <p className="w-full text-xs text-soft">Falling short counts as a slip once the day is over.</p>
           </div>
         )}
         {field.kind === "amount" && (
@@ -566,7 +566,7 @@ function FieldEditor({
               />
             </label>
             <div className="flex w-full flex-wrap items-center gap-2">
-              <span className="font-medium text-ink/70">Target</span>
+              <span className="font-medium text-soft">Target</span>
               <select
                 value={field.target?.op ?? "none"}
                 onChange={(e) => {
@@ -604,7 +604,7 @@ function FieldEditor({
                   {field.suffix}
                 </label>
               )}
-              <p className="w-full text-[11px] text-ink/55">
+              <p className="w-full text-xs text-soft">
                 {field.target
                   ? field.target.op === "atMost"
                     ? "Going over it counts as a slip."
@@ -617,7 +617,7 @@ function FieldEditor({
       </div>
 
       {breakdownOf(spec, field) && (
-        <p className="mt-2 text-[11px] text-ink/55">
+        <p className="mt-2 text-xs text-soft">
           This breaks down &ldquo;{breakdownOf(spec, field)?.label}&rdquo;: each pick you choose on Today can get its own optional amount.
         </p>
       )}
@@ -646,7 +646,7 @@ function TonePicker({ value, onChange }: { value: Tone | undefined; onChange: (t
             aria-label={o.label}
             aria-pressed={on}
             onClick={() => onChange(o.id === "none" ? undefined : o.id)}
-            className={`size-6 rounded-full transition-[transform,opacity,box-shadow] ${o.swatch} ${on ? "scale-110 ring-2 ring-ink ring-offset-1 ring-offset-white" : "opacity-50 hover:opacity-90"}`}
+            className={`size-6 rounded-full transition-[transform,opacity,box-shadow] ${o.swatch} ${on ? "scale-110 ring-2 ring-ink ring-offset-1 ring-offset-surface" : "opacity-50 hover:opacity-90"}`}
           />
         );
       })}
@@ -690,7 +690,7 @@ function OptionsEditor({
           <input value={o.label} maxLength={30} onChange={(e) => update(i, { label: e.target.value })} className={`${input} flex-1 py-1.5 text-sm`} />
           {tones && <TonePicker value={o.tone} onChange={(tone) => update(i, { tone })} />}
           {options.length > 2 && (
-            <button type="button" onClick={() => remove(i)} aria-label="Remove option" className="chip flex size-7 items-center justify-center rounded-full text-bad/80">
+            <button type="button" onClick={() => remove(i)} aria-label="Remove option" className="chip flex size-7 items-center justify-center rounded-full text-danger">
               <Trash2 size={12} />
             </button>
           )}
@@ -700,14 +700,14 @@ function OptionsEditor({
         type="button"
         onClick={add}
         disabled={options.length >= LIMITS.options}
-        className="flex items-center gap-1 text-xs text-ink/60 hover:text-ink disabled:opacity-40"
+        className="flex items-center gap-1 text-xs text-soft hover:text-ink disabled:opacity-40"
       >
         <Plus size={12} /> Add option
       </button>
-      <p className="text-[11px] text-ink/55">Removing an option keeps it on the days you used it, as a day-only pick.</p>
+      <p className="text-xs text-soft">Removing an option keeps it on the days you used it, as a day-only pick.</p>
 
       {tones && (
-        <div className="space-y-1.5 border-t border-ink/10 pt-2 text-[11px] text-ink/60">
+        <div className="space-y-1.5 border-t border-ink/10 pt-2 text-xs text-soft">
           <p>Orange means a slip on Patterns. Yellow and green don&apos;t.</p>
           {options.length >= 3 &&
             (cutoff ? (
@@ -772,7 +772,7 @@ function ConditionEditor({
 
   return (
     <div className="mt-3 border-t border-ink/10 pt-3 text-xs">
-      <label className="flex items-center gap-2 font-medium text-ink/70">
+      <label className="flex items-center gap-2 font-medium text-soft">
         <input
           type="checkbox"
           checked={on}
@@ -817,7 +817,7 @@ function ConditionEditor({
                     showIf: "equals" in cond ? { field: parent.key, notEquals: cond.equals } : { field: parent.key, equals: cond.notEquals },
                   })
                 }
-                className="text-ink/50 underline underline-offset-2 hover:text-ink"
+                className="text-soft underline underline-offset-2 hover:text-ink"
               >
                 switch to &quot;{"equals" in cond ? "is not" : "is"}&quot;
               </button>

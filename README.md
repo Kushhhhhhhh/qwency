@@ -79,8 +79,9 @@ The app outlives the day: phones park tabs for hours. Three rules keep that safe
   `src/lib/sync.ts`): when the tab returns to the foreground, "today" rolls forward (and you
   follow it if you were on "today"), and the server's state is folded in. It only does this at
   most every 15s, and never while a save is in flight or if you edited meanwhile.
-- **Nothing unsaved is overwritten.** A save that failed (offline) is remembered and re-sent;
-  until then a refresh keeps the screen's copy of that day.
+- **Nothing unsaved is overwritten, and nothing unsaved is lost.** Every change goes into an
+  *outbox* before it is sent and is crossed off when the server confirms it (see "The outbox"
+  below). Until then a refresh keeps the screen's copy of that day.
 
 Both the first page load and the refresh read through `readSnapshot` (`src/lib/snapshot.ts`).
 New users' default spec is written once, only if missing, instead of on every page load.
@@ -181,4 +182,47 @@ Measured with Lighthouse (mobile, slow 4G) and, once deployed, Vercel Speed Insi
   wouldn't make the page paint sooner: the content follows the page's first bytes in the same
   response as soon as the database answers (tens of milliseconds in the same region), well before
   the code that could read such a copy has downloaded.
+
+## The outbox: unsaved changes survive a dropped connection
+
+Phones lose signal in lifts and tunnels, and apps get killed in the background. So a change is written
+to an outbox (`src/lib/outbox.ts`, kept in this browser's localStorage by `src/lib/outbox-store.ts`)
+*before* it is sent, and crossed off only when the server says yes.
+
+- **What is kept**: only your unsent changes (the answers you changed, a verdict, reasons, a note, a
+  focus line, a month's plan), never a copy of your days. One entry per signed-in person, so someone
+  else signing in on the same phone never sees or sends yours. Changes to the same thing merge, and a
+  later tap on the same question replaces the earlier one.
+- **When it is sent**: right away; again when you come back to the app, when you're back online, every
+  minute while something is waiting, and on the next visit. On a visit it first shows your waiting
+  changes on screen (so what you did is what you see), then sends them and says "Caught up".
+- **Crossed off exactly**: if you changed the same answer again while the first was on its way, the
+  newer one stays waiting. Settings saves (Setup) aren't in the outbox: Setup keeps your draft.
+- **Limits**: a change that still can't be saved after 14 days is given up on (so one the server
+  rejects can't be retried forever), at most 60 days are kept, and storage is read defensively
+  (anything unexpected is ignored). In a private window, where storage is blocked, it works in memory
+  only, which is no worse than before.
+- Tested as a model: replaying whatever is waiting onto the server's old copy reproduces exactly what
+  was on screen, over hundreds of random sessions.
+
+## Light and dark
+
+The switch is the small round button in the header, beside the progress ring, and it remembers your
+choice on this device. With no choice yet, the device's own setting decides. A tiny script in the page
+head applies it before anything is drawn (`src/lib/theme.ts`), so a dark screen never flashes light.
+
+- **Colours are variables** (`src/app/globals.css`): ink, cream (the page), soft (quieter text),
+  surface (what "white" panels are made of), shade (shadow tint). Dark swaps them; nothing else knows
+  which theme it is. Use `bg-surface`, `text-soft`, `shadow-shade`, never `bg-white` or a faint ink.
+- **The coloured tiles stay pastel in both themes.** Inside one, the colours go back to the light
+  palette, a touch deeper, so text clears the readability threshold even on the olive tile.
+- Clerk's sign-in card and avatar menu take the app's colours through the same variables. The install
+  icon's splash colour and the manifest can't change per theme, so they stay cream.
+
+## Readability
+
+Soft text (hints, captions, placeholders) is one colour, `text-soft`, picked to clear 4.5:1 on every
+surface it sits on in both themes. The earlier fainter shades failed that in 102 of 115 places. Text
+is never smaller than 11px, and the live pairs are checked from the stylesheet itself (the contrast
+audit reads `globals.css`, so it can't drift from what ships).
 

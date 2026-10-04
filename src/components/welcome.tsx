@@ -8,6 +8,7 @@ import { DEFAULT_SPEC, LIMITS, scheduleLabel, type HabitSpec } from "@/lib/spec"
 import { TEMPLATES, buildStarter } from "@/lib/templates";
 import { iconFor } from "@/lib/icons";
 import { localKey } from "@/lib/tracker";
+import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
 /**
@@ -47,12 +48,15 @@ export function Welcome() {
     <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-36 pt-6">
       <header className="mb-8 flex items-center justify-between">
         <p className="text-sm font-semibold tracking-tight">Qwency</p>
-        <UserMenu size={40} />
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <UserMenu size={40} />
+        </div>
       </header>
 
-      <p className="text-xs font-medium uppercase tracking-wider text-ink/60">Welcome</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-soft">Welcome</p>
       <h1 className="mt-1 text-3xl font-semibold leading-tight tracking-tight">What do you want to look at?</h1>
-      <p className="mt-3 text-[15px] leading-relaxed text-ink/75">
+      <p className="mt-3 text-[15px] leading-relaxed text-soft">
         Pick the parts of your day you care about. Qwency shows you what actually happened, where it slipped, and why, with no
         scores and no judgment. Change, add or remove any of it later.
       </p>
@@ -70,7 +74,7 @@ export function Welcome() {
                 disabled={blocked}
                 onClick={() => toggle(t.id)}
                 className={`flex h-full w-full items-start gap-3 rounded-2xl border p-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-[0.98] disabled:opacity-40 ${
-                  on ? "border-transparent bg-ink text-cream shadow-lg shadow-ink/25" : "chip"
+                  on ? "border-transparent bg-ink text-cream shadow-lg shadow-shade/25" : "chip"
                 }`}
               >
                 <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl ${on ? "bg-cream/15" : "bg-lilac/50"}`}>
@@ -81,8 +85,8 @@ export function Welcome() {
                     <span className="text-[15px] font-semibold leading-tight">{t.title}</span>
                     {on && <Check size={15} strokeWidth={3} className="check-pop" />}
                   </span>
-                  <span className={`mt-1 block text-xs leading-snug ${on ? "text-cream/80" : "text-ink/65"}`}>{t.blurb}</span>
-                  <span className={`mt-1.5 block text-[11px] font-medium ${on ? "text-cream/70" : "text-ink/50"}`}>{scheduleLabel(t.section.days)}</span>
+                  <span className={`mt-1 block text-xs leading-snug ${on ? "text-cream/80" : "text-soft"}`}>{t.blurb}</span>
+                  <span className={`mt-1.5 block text-xs font-medium ${on ? "text-cream/70" : "text-soft"}`}>{scheduleLabel(t.section.days)}</span>
                 </span>
               </button>
             </li>
@@ -90,7 +94,7 @@ export function Welcome() {
         })}
       </ul>
 
-      <p className="mt-5 text-sm text-ink/65">
+      <p className="mt-5 text-sm text-soft">
         Every day also asks for one honest verdict, Good, Okay or Rough, whatever you pick.
         {full && ` That's ${LIMITS.sections} sections, the most a day can hold and still stay quick.`}
       </p>
@@ -100,7 +104,7 @@ export function Welcome() {
           type="button"
           onClick={() => start(buildStarter(["sleep", "move", "focus", "spend"]))}
           disabled={saving}
-          className="text-ink/60 underline underline-offset-2 hover:text-ink disabled:opacity-50"
+          className="text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
         >
           Or start with a suggested few
         </button>
@@ -111,7 +115,7 @@ export function Welcome() {
           type="button"
           onClick={() => start(DEFAULT_SPEC)}
           disabled={saving}
-          className="text-ink/60 underline underline-offset-2 hover:text-ink disabled:opacity-50"
+          className="text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
         >
           Use the example setup
         </button>
@@ -119,7 +123,7 @@ export function Welcome() {
 
       <div className="fixed bottom-5 left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-2">
         {error && (
-          <p role="alert" className="rounded-full bg-bad px-4 py-1.5 text-sm font-medium text-[#2b2946] shadow-lg shadow-ink/20">
+          <p role="alert" className="rounded-full bg-bad px-4 py-1.5 text-sm font-medium text-onpastel shadow-lg shadow-shade/20">
             Couldn&apos;t save. Check your connection and try again.
           </p>
         )}
@@ -127,7 +131,7 @@ export function Welcome() {
           type="button"
           disabled={picked.length === 0 || saving}
           onClick={() => start(buildStarter(picked))}
-          className="rounded-full bg-ink px-7 py-3 text-sm font-semibold text-cream shadow-xl shadow-ink/30 transition-[transform,opacity] duration-200 active:scale-95 disabled:opacity-50"
+          className="rounded-full bg-ink px-7 py-3 text-sm font-semibold text-cream shadow-xl shadow-shade/30 transition-[transform,opacity] duration-200 active:scale-95 disabled:opacity-50"
         >
           {saving ? "Setting up…" : picked.length === 0 ? "Pick at least one" : `Start with ${picked.length}`}
         </button>
