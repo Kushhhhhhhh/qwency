@@ -1,16 +1,17 @@
-import { Activity, BookOpen, ListChecks, Settings2 } from "lucide-react";
+import { Activity, BookOpen, ListChecks, Settings2, ShoppingBag } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 // The parts of the screen that don't depend on anyone's data. They render on the server from the
 // first byte (so the page has real words and its real shape straight away) and the interactive app
 // takes over in the same places, so nothing moves when it arrives.
 
-export type Tab = "today" | "patterns" | "journal" | "setup";
+export type Tab = "today" | "patterns" | "journal" | "shop" | "setup";
 
 const TABS = [
   ["today", "Today", ListChecks],
   ["patterns", "Patterns", Activity],
   ["journal", "Journal", BookOpen],
+  ["shop", "Shop", ShoppingBag],
   ["setup", "Setup", Settings2],
 ] as const;
 

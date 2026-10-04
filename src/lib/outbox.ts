@@ -1,5 +1,6 @@
 import { applyPatch, sanitizeData, type Data } from "./spec";
 import { sanitizePlan, type MonthPlan } from "./goals";
+import { MONTH_RE, sanitizeBudget, sanitizeItem, type Item } from "./shop";
 import { same } from "./sync";
 import { DATE_RE, EMPTY_ENTRY, FOCUS_MAX, MOODS, NOTE_MAX, WHY_TAGS, type Entries, type Mood } from "./tracker";
 
@@ -27,6 +28,10 @@ export type Box = {
   days: Record<string, DayBox>;
   focus: Record<string, Waiting<string>>;
   plans: Record<string, Waiting<MonthPlan>>;
+  /** Shop: an item added or changed (its whole latest state), or null for "removed" */
+  items: Record<string, Waiting<Item | null>>;
+  /** Shop: a month's pocket; null clears it */
+  budgets: Record<string, Waiting<number | null>>;
 };
 
 /** One change, as it is queued, sent and crossed off. */
@@ -36,16 +41,25 @@ export type Op =
   | { kind: "tags"; date: string; tags: string[] }
   | { kind: "note"; date: string; note: string }
   | { kind: "focus"; month: string; text: string }
-  | { kind: "plan"; month: string; plan: MonthPlan };
+  | { kind: "plan"; month: string; plan: MonthPlan }
+  | { kind: "item"; item: Item }
+  | { kind: "itemRemove"; id: string }
+  | { kind: "budget"; month: string; amount: number | null };
 
 export const MAX_AGE_MS = 14 * 86_400_000; // older than this and it's given up on (see DayBox.at)
 const MAX_DAYS = 60;
-const MONTH_RE = /^\d{4}-\d{2}$/;
+const MAX_ITEMS = 200;
 
-export const emptyBox = (): Box => ({ v: 1, days: {}, focus: {}, plans: {} });
+export const emptyBox = (): Box => ({ v: 1, days: {}, focus: {}, plans: {}, items: {}, budgets: {} });
 
 export function isEmpty(b: Box): boolean {
-  return Object.keys(b.days).length === 0 && Object.keys(b.focus).length === 0 && Object.keys(b.plans).length === 0;
+  return (
+    Object.keys(b.days).length === 0 &&
+    Object.keys(b.focus).length === 0 &&
+    Object.keys(b.plans).length === 0 &&
+    Object.keys(b.items).length === 0 &&
+    Object.keys(b.budgets).length === 0
+  );
 }
 
 /** Everything that has something waiting, as the keys the screen uses for "don't overwrite this with the server's copy". */
@@ -76,6 +90,12 @@ export function queue(b: Box, op: Op, now: number): Box {
       return { ...b, focus: { ...b.focus, [op.month]: { v: op.text, at: b.focus[op.month]?.at ?? now } } };
     case "plan":
       return { ...b, plans: { ...b.plans, [op.month]: { v: op.plan, at: b.plans[op.month]?.at ?? now } } };
+    case "item":
+      return { ...b, items: { ...b.items, [op.item.id]: { v: op.item, at: b.items[op.item.id]?.at ?? now } } };
+    case "itemRemove":
+      return { ...b, items: { ...b.items, [op.id]: { v: null, at: b.items[op.id]?.at ?? now } } };
+    case "budget":
+      return { ...b, budgets: { ...b.budgets, [op.month]: { v: op.amount, at: b.budgets[op.month]?.at ?? now } } };
   }
 }
 
@@ -129,6 +149,24 @@ export function settle(b: Box, op: Op): Box {
       const { [op.month]: _gone, ...plans } = b.plans;
       return { ...b, plans };
     }
+    case "item": {
+      const w = b.items[op.item.id];
+      if (!w || w.v === null || !same(w.v, op.item)) return b; // changed again meanwhile: the newer state stays waiting
+      const { [op.item.id]: _gone, ...items } = b.items;
+      return { ...b, items };
+    }
+    case "itemRemove": {
+      const w = b.items[op.id];
+      if (!w || w.v !== null) return b; // it was brought back meanwhile
+      const { [op.id]: _gone, ...items } = b.items;
+      return { ...b, items };
+    }
+    case "budget": {
+      const w = b.budgets[op.month];
+      if (!w || w.v !== op.amount) return b;
+      const { [op.month]: _gone, ...budgets } = b.budgets;
+      return { ...b, budgets };
+    }
   }
 }
 
@@ -156,6 +194,11 @@ export function pendingOps(b: Box): Op[] {
   }
   for (const month of Object.keys(b.focus).sort()) ops.push({ kind: "focus", month, text: b.focus[month].v });
   for (const month of Object.keys(b.plans).sort()) ops.push({ kind: "plan", month, plan: b.plans[month].v });
+  for (const month of Object.keys(b.budgets).sort()) ops.push({ kind: "budget", month, amount: b.budgets[month].v });
+  for (const id of Object.keys(b.items).sort((x, y) => b.items[x].at - b.items[y].at || (x < y ? -1 : 1))) {
+    const v = b.items[id].v;
+    ops.push(v === null ? { kind: "itemRemove", id } : { kind: "item", item: v });
+  }
   return ops;
 }
 
@@ -192,6 +235,32 @@ export function overlayPlans(plans: Record<string, MonthPlan>, b: Box): Record<s
   if (months.length === 0) return plans;
   const out = { ...plans };
   for (const m of months) out[m] = b.plans[m].v;
+  return out;
+}
+
+/** The Shop list with the waiting changes applied. The same array comes back when nothing waits. */
+export function overlayItems(items: Item[], b: Box): Item[] {
+  const ids = Object.keys(b.items);
+  if (ids.length === 0) return items;
+  const waiting = b.items;
+  const out = items.filter((i) => !(i.id in waiting) || waiting[i.id].v !== null).map((i) => (waiting[i.id]?.v ? (waiting[i.id].v as Item) : i));
+  const have = new Set(out.map((i) => i.id));
+  for (const id of ids) {
+    const v = waiting[id].v;
+    if (v !== null && !have.has(id)) out.push(v);
+  }
+  return out;
+}
+
+export function overlayBudgets(budgets: Record<string, number>, b: Box): Record<string, number> {
+  const months = Object.keys(b.budgets);
+  if (months.length === 0) return budgets;
+  const out = { ...budgets };
+  for (const m of months) {
+    const v = b.budgets[m].v;
+    if (v === null) delete out[m];
+    else out[m] = v;
+  }
   return out;
 }
 
@@ -241,6 +310,33 @@ export function parseBox(raw: unknown, now: number): Box {
       if (!MONTH_RE.test(month) || !isObj(r)) continue;
       const at = stamp(r.at, now);
       if (now - at <= MAX_AGE_MS) out.plans[month] = { v: sanitizePlan(r.v), at };
+    }
+  }
+  if (isObj(raw.items)) {
+    for (const id of Object.keys(raw.items).slice(-MAX_ITEMS)) {
+      const r = raw.items[id];
+      if (!isObj(r)) continue;
+      const at = stamp(r.at, now);
+      if (now - at > MAX_AGE_MS) continue;
+      if (r.v === null) {
+        out.items[id.toLowerCase()] = { v: null, at };
+        continue;
+      }
+      const item = sanitizeItem(r.v);
+      if (item && item.id === id.toLowerCase()) out.items[item.id] = { v: item, at };
+    }
+  }
+  if (isObj(raw.budgets)) {
+    for (const month of Object.keys(raw.budgets)) {
+      const r = raw.budgets[month];
+      if (!MONTH_RE.test(month) || !isObj(r)) continue;
+      const at = stamp(r.at, now);
+      if (now - at > MAX_AGE_MS) continue;
+      if (r.v === null) out.budgets[month] = { v: null, at };
+      else {
+        const amount = sanitizeBudget(r.v);
+        if (amount !== null) out.budgets[month] = { v: amount, at };
+      }
     }
   }
   return out;

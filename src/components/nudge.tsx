@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { DISMISS_COOKIE, serializeDismissed } from "@/lib/dismissed";
-import { catchUp, listTitles, openToday } from "@/lib/insights";
+import { catchUp, listTitles, openDetails } from "@/lib/insights";
 import type { HabitSpec } from "@/lib/spec";
 import { prettyDate, type Entries } from "@/lib/tracker";
 
@@ -39,7 +39,10 @@ export function Nudges({
   if (selected !== today) return null;
 
   const missed = catchUp(spec, entries, today);
-  const open = openToday(spec, entries, today);
+  const open = openDetails(spec, entries, today);
+  // two different things can be "open": nothing logged yet, or logged but still under its goal (5 of 8 glasses)
+  const unlogged = open.filter((o) => o.short.length === 0).map((o) => o.title);
+  const under = open.filter((o) => o.short.length > 0).map((o) => `${o.title} (${o.short.join(", ")})`);
   const showCatchUp = missed !== null && !dismissed.includes(missed.date);
   const showEvening = hour >= EVENING && open.length > 0;
   if (!showCatchUp && !showEvening) return null;
@@ -73,7 +76,9 @@ export function Nudges({
       )}
       {showEvening && (
         <p role="status" className="rounded-2xl bg-surface/50 px-4 py-2.5 text-sm leading-snug text-ink/85">
-          {open.length === 1 ? "1 thing" : `${open.length} things`} still open today: {listTitles(open)}.
+          {unlogged.length > 0 && `${unlogged.length === 1 ? "1 thing" : `${unlogged.length} things`} still open today: ${listTitles(unlogged)}.`}
+          {unlogged.length > 0 && under.length > 0 && " "}
+          {under.length > 0 && `Still short of your goal today: ${listTitles(under)}.`}
         </p>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { addDays, weekdayIndex, type Entries } from "./tracker";
 import { buildMirrorOver, type Cell, type Mirror, type RowMirror } from "./mirror";
-import { startedOn, type HabitSpec } from "./spec";
+import { formatAmount, isSlip, startedOn, targetOf, type HabitSpec } from "./spec";
 
 // Small, honest read-outs on top of the mirror. Everything here is derived from the days you
 // already logged (nothing new to enter) and every claim is guarded: enough days, a big enough
@@ -30,12 +30,32 @@ export function catchUp(spec: HabitSpec, entries: Entries, today: string): Catch
   return titles.length ? { date, titles } : null;
 }
 
-/** What's still unfinished today (a section with nothing logged, or a floor not reached yet). */
-export function openToday(spec: HabitSpec, entries: Entries, today: string): string[] {
+/**
+ * What's still unfinished today. `short` is empty for a section with nothing logged; otherwise it was
+ * logged and is only under a floor so far, said as the numbers ("5 of 8 glasses").
+ */
+export type OpenItem = { title: string; short: string[] };
+
+export function openDetails(spec: HabitSpec, entries: Entries, today: string): OpenItem[] {
   const m = buildMirrorOver(spec, entries, today, [today]);
   if (m.startedOn === null) return [];
-  return m.rows.filter((r) => r.cells[0].state === "open").map((r) => r.title);
+  const data = entries[today]?.data ?? {};
+  return m.rows
+    .filter((r) => r.cells[0].state === "open")
+    .map((r) => {
+      const section = spec.sections.find((s) => s.id === r.id);
+      const short = (section?.fields ?? []).flatMap((f) => {
+        const v = data[f.key];
+        const t = targetOf(f);
+        if (typeof v !== "number" || !t || !isSlip(f, v, true) || isSlip(f, v, false)) return [];
+        return f.kind === "counter" ? [`${v} of ${t.value} ${f.unit}`] : f.kind === "amount" ? [`${formatAmount(f, v)} of ${formatAmount(f, t.value)}`] : [];
+      });
+      return { title: r.title, short };
+    });
 }
+
+/** The titles of what's still unfinished today (a section with nothing logged, or a floor not reached yet). */
+export const openToday = (spec: HabitSpec, entries: Entries, today: string): string[] => openDetails(spec, entries, today).map((o) => o.title);
 
 /**
  * Days in a row with nothing missed: everything planned was done and nothing slipped, "the day

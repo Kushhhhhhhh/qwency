@@ -19,5 +19,7 @@ export default function manifest(): MetadataRoute.Manifest {
       // artwork inset in the safe area, so a round or squircle crop doesn't cut into it
       { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // Android: Share -> Qwency from a shop's app or a web page, to start a Shop item (iPhone doesn't support this)
+    share_target: { action: "/shop/add", method: "GET", params: { title: "title", text: "text", url: "url" } },
   };
 }

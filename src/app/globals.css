@@ -24,6 +24,8 @@
   --color-shade: #504e76;
   --color-danger: #c2410c;
   --color-onpastel: #1f1d38;
+  /* the pastel lilac as a fixed swatch (--color-lilac itself goes quieter in dark) */
+  --color-pastel-lilac: #c4c3e3;
 }
 
 @theme inline {

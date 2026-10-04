@@ -137,10 +137,17 @@ every column, so a missing one just means no goals yet) but saving goals fails.
 
 ## The daily loop and first impressions
 
-- **Catch-up and "still open"** (`src/components/nudge.tsx`, `catchUp` / `openToday` in
+- **Catch-up and "still open"** (`src/components/nudge.tsx`, `catchUp` / `openDetails` in
   `src/lib/insights.ts`): on Today, a quiet line when yesterday had planned sections you never logged
   (one tap goes to that day; dismissing is remembered for the day, in a small cookie so the server
   already knows), and after 8pm a line with what's still open today. Both read the same mirror as Patterns.
+  The evening line tells two things apart: sections with nothing logged ("1 thing still open today: Gym.")
+  and sections you did log but that are still under their goal ("Still short of your goal today: Skin &
+  water (5 of 8 glasses)."). A section's tick means "you logged something here"; reaching the goal is a
+  separate line you drew in Setup.
+- **Number boxes in Setup** (a counter's "Hit at least" and "Max") are checked when you leave the box, not
+  on every key, so you can clear one and type a new number (`settleWhole` in `src/lib/spec.ts`). A goal
+  above the max lifts the max with it.
 - **The streak is "days without a gap"** (`cleanRun`): everything planned done and nothing slipped,
   the day verdict included. Opening the app on a day of skipped sections doesn't extend it.
 - **Patterns says more, carefully** (all in `src/lib/insights.ts`, all derived, nothing new to log):
@@ -225,4 +232,59 @@ Soft text (hints, captions, placeholders) is one colour, `text-soft`, picked to 
 surface it sits on in both themes. The earlier fainter shades failed that in 102 of 115 places. Text
 is never smaller than 11px, and the live pairs are checked from the stylesheet itself (the contrast
 audit reads `globals.css`, so it can't drift from what ships).
+
+## Shop: a monthly pocket for the things you actually need
+
+The fifth tab. Think of the **pocket** (your budget for the month) as a suitcase of a fixed size: needs
+are packed first, wants fill what's left, and a dashed line shows where it's full. Everything below the
+line waits for next month.
+
+- **Three shelves**: *This month* (planned, counted against the pocket, each a Need or a Want), *Window*
+  (links saved to look at later, never counted, no price needed) and *Bought* (receipts with what you
+  actually paid, plus what you decided to skip). A thing moves Window -> This month -> Bought or Skipped.
+  On a new month, things still planned from before are offered a carry-over.
+- **Pocket arithmetic** (`src/lib/shop.ts`, `pocketView`): `left = pocket - bought - planned`; the order is
+  needs, then wants, each in the order you set (arrows in the editor); the line falls where the running
+  total passes what's free after Bought. Said in plain sentences ("The list is ₹1,896 over your pocket.
+  Headphones won't fit this month."). Tested on random months: what's above the line fits, the first
+  thing below it doesn't.
+- **Icons, not pictures.** Each thing has an icon you pick (24 shopping icons,
+  `src/lib/shop-icons.ts`), with a first guess from the words in its title (`src/lib/shop-suggest.ts`).
+  There are no product photos: shops don't offer them to anyone but a browser, and a card is only there to
+  remind you what to buy and where. The currency symbol is the one from your own Spending question.
+  Bought is **separate from daily Spending**: nothing is written there.
+- **Saving** goes through the same outbox as everything else (new kinds: `item`, `itemRemove`, `budget`),
+  so adding things offline can't lose them. One database row per thing (`shop_items`), so edits merge
+  cleanly; the month's pocket is a new `budget` column on the existing `month_focus` row.
+  **Run `supabase/schema.sql` once** (it is safe to re-run) before saving works. Until then the tab says
+  so instead of failing quietly.
+- **Why there is no embedded shop (iframe):** most shops forbid being shown inside another page (Myntra,
+  Apple, boAt, Ajio) or turn automated requests away (Amazon, Meesho, Ajio, Croma, Myntra), and a shop in a
+  small frame breaks on phones anyway. So a thing is a small postcard instead: icon, title, price and a
+  button that opens the real shop (or its app).
+
+### Getting a product in
+
+1. **Type it** (always works): a title and a price; optionally a link and a note.
+2. **Paste a link.** The name comes straight from the link's own words with no network at all
+   (`titleFromUrl`: "…/nutripro-juicer-mixer-grinder-smoothie-maker/p/hxfwhp" -> "Nutripro Juicer Mixer
+   Grinder Smoothie Maker"), so it works even for shops that refuse to be read. Ad-tracking parameters
+   (`utm_…`, `srsltid`, `fbclid`…) are stripped from the saved link. Then the page's own title and price are
+   read (`previewLink` in `src/app/actions.ts`) where the shop allows it; your own title and price are
+   never overwritten. As tested in October 2026: IKEA, Flipkart (the title, not the price), Nykaa, boAt,
+   Decathlon and Apple can be read; Amazon, Meesho, Ajio and Croma answer "Access Denied" or "not found" to
+   anything automated and Myntra never answers, so those can't be read, and we don't try to get around
+   that (the reader says who it is): type the price. Shop wording around a name ("Buy X Online", "X Online
+   at Best Price On Flipkart.com") is trimmed off. It reads one page you pasted, on your request, and never
+   stores it.
+   `src/lib/linkpreview.ts` is careful on purpose: http(s) only and the ordinary ports, the address is
+   looked up once and checked, then that exact address is connected to (no private, loopback, link-local
+   or metadata addresses, IPv6 included), every redirect is checked the same way (at most four), a few
+   seconds and about a megabyte at most, HTML only, and a mild per-person rate limit. The rules and a
+   misbehaving local server are covered by tests.
+3. **Share to Qwency (Android)**: in a shop's app or a web page, Share -> Qwency opens Shop with the title
+   and link filled in (`share_target` in `src/app/manifest.ts`, landing route `src/app/(app)/shop/add`);
+   you add the price and press Add. Android only (iPhone doesn't support it, so paste there). Chrome reads
+   the manifest when the app is installed, so an app installed before this existed may need to be added to
+   the home screen again before Qwency shows up in the Share sheet.
 

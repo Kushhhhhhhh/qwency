@@ -63,3 +63,41 @@ create policy "own rows" on public.habit_specs
   for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id)
   with check ((select auth.jwt() ->> 'sub') = user_id);
+
+-- ---------------------------------------------------------------------------------------------
+-- Shop: a monthly "pocket" (budget) and the things you actually need. Safe to re-run.
+--
+-- A month's pocket lives on the month's existing row (month_focus), next to its focus line and goals.
+alter table public.month_focus add column if not exists budget numeric(12, 2);
+
+-- One row per thing, so editing one never rewrites the others and offline edits merge cleanly.
+--   shelf: month = planned this month, window = saved to look at later, bought = a receipt, skipped = decided against
+--   icon:  one of the app's shopping icons (no pictures are stored)
+create table if not exists public.shop_items (
+  user_id      text          not null,
+  id           uuid          not null,
+  month        text          not null check (month ~ '^\d{4}-(0[1-9]|1[0-2])$'),
+  title        text          not null,
+  price        numeric(12, 2),
+  url          text          not null default '',
+  note         text          not null default '',
+  icon         text          not null default 'bag',
+  kind         text          not null default 'need' check (kind in ('need', 'want')),
+  shelf        text          not null default 'month' check (shelf in ('month', 'window', 'bought', 'skipped')),
+  bought_price numeric(12, 2),
+  bought_on    date,
+  sort         integer       not null default 0,
+  created_at   timestamptz   not null default now(),
+  updated_at   timestamptz   not null default now(),
+  primary key (user_id, id)
+);
+
+create index if not exists shop_items_user_month on public.shop_items (user_id, month);
+
+alter table public.shop_items enable row level security;
+
+drop policy if exists "own rows" on public.shop_items;
+create policy "own rows" on public.shop_items
+  for all to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id)
+  with check ((select auth.jwt() ->> 'sub') = user_id);

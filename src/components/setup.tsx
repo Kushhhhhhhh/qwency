@@ -12,6 +12,7 @@ import {
   canSlip,
   scheduleLabel,
   schedulePreset,
+  settleWhole,
   uniqueSlug,
   type FieldSpec,
   type HabitSpec,
@@ -430,6 +431,32 @@ function defaultsFor(kind: FieldSpec["kind"], key: string, label: string): Field
   };
 }
 
+/**
+ * A whole number that is checked when you leave the box (or press Enter), not on every keystroke, so you
+ * can clear it and type a new one. (Checking each keystroke snapped an emptied box back to its minimum, and
+ * then typing "6" made "16".) Anything out of range is pulled in to the nearest allowed number; anything
+ * that isn't a number puts the old one back.
+ */
+function WholeNumber({ value, min, max, onCommit, className }: { value: number; min: number; max: number; onCommit: (n: number) => void; className: string }) {
+  return (
+    <input
+      key={value}
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      defaultValue={value}
+      onBlur={(e) => {
+        const next = settleWhole(e.target.value, value, min, max);
+        e.target.value = String(next);
+        if (next !== value) onCommit(next);
+      }}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+      className={className}
+    />
+  );
+}
+
 function FieldEditor({
   field,
   spec,
@@ -501,25 +528,12 @@ function FieldEditor({
           <div className="flex flex-wrap gap-3 text-xs">
             <label className="flex items-center gap-1.5">
               Hit at least
-              <input
-                type="number"
-                min={1}
-                max={field.max}
-                value={field.goal}
-                onChange={(e) => onChange({ goal: Math.max(1, Math.min(field.max, Number(e.target.value) || 1)) })}
-                className={`${input} w-16 py-1`}
-              />
+              {/* a goal above the max lifts the max with it, so you can always type the number you mean */}
+              <WholeNumber value={field.goal} min={1} max={60} onCommit={(goal) => onChange({ goal, max: Math.max(field.max, goal) })} className={`${input} w-16 py-1`} />
             </label>
             <label className="flex items-center gap-1.5">
               Max
-              <input
-                type="number"
-                min={field.goal}
-                max={60}
-                value={field.max}
-                onChange={(e) => onChange({ max: Math.max(field.goal, Math.min(60, Number(e.target.value) || field.goal)) })}
-                className={`${input} w-16 py-1`}
-              />
+              <WholeNumber value={field.max} min={field.goal} max={60} onCommit={(max) => onChange({ max })} className={`${input} w-16 py-1`} />
             </label>
             <label className="flex items-center gap-1.5">
               Unit

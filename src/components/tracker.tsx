@@ -2,7 +2,7 @@
 
 import { Suspense, startTransition, use, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import dynamic from "next/dynamic";
-import { loadSnapshot, patchData, saveFocus, saveNote, savePlan, saveSpec, saveTags, setMood } from "@/app/actions";
+import { loadSnapshot, patchData, removeItem, saveBudget, saveFocus, saveItem, saveNote, savePlan, saveSpec, saveTags, setMood } from "@/app/actions";
 import type { MonthPlan } from "@/lib/goals";
 import {
   breakdownOf,
@@ -38,6 +38,7 @@ import {
 import { TZ_COOKIE } from "@/lib/clock";
 import { emptyBox, isEmpty, overlayEntries, overlayFocus, overlayPlans, pendingOps, queue, settle, waitingKeys, type Box, type Op } from "@/lib/outbox";
 import { readBox, writeBox } from "@/lib/outbox-store";
+import { currencyOf } from "@/lib/shop";
 import { whenIdle } from "@/lib/idle";
 import { useStable } from "@/lib/use-stable";
 import { RECENT_DAYS, type Snapshot } from "@/lib/snapshot";
@@ -64,10 +65,12 @@ const CHEERS: Record<Mood, string[]> = {
 const loaders = {
   patterns: () => import("./overview"),
   journal: () => import("./journal"),
+  shop: () => import("./shop"),
   setup: () => import("./setup"),
 };
 const Overview = dynamic(() => loaders.patterns().then((m) => m.Overview), { loading: () => <TabSkeleton /> });
 const Journal = dynamic(() => loaders.journal().then((m) => m.Journal), { loading: () => <TabSkeleton /> });
+const Shop = dynamic(() => loaders.shop().then((m) => m.Shop), { loading: () => <TabSkeleton /> });
 const Setup = dynamic(() => loaders.setup().then((m) => m.Setup), { loading: () => <TabSkeleton /> });
 const Welcome = dynamic(() => import("./welcome").then((m) => m.Welcome));
 
@@ -134,6 +137,12 @@ function exec(op: Op): Promise<{ ok: boolean }> {
       return saveFocus(op.month, op.text);
     case "plan":
       return savePlan(op.month, op.plan);
+    case "item":
+      return saveItem(op.item);
+    case "itemRemove":
+      return removeItem(op.id);
+    case "budget":
+      return saveBudget(op.month, op.amount);
   }
 }
 
@@ -150,16 +159,19 @@ export function Tracker({
   today,
   hour,
   dismissed,
+  share = null,
 }: {
   snapshot: Promise<Snapshot>;
   userId: string;
   today: string;
   hour: number;
   dismissed: string[];
+  /** a title and link shared into the app from a shop (opens Shop with them filled in) */
+  share?: { title: string; url: string } | null;
 }) {
   return (
     <Suspense fallback={<TodayShell dateText={prettyDate(today)} />}>
-      <TrackerLoaded snapshot={snapshot} userId={userId} today={today} hour={hour} dismissed={dismissed} />
+      <TrackerLoaded snapshot={snapshot} userId={userId} today={today} hour={hour} dismissed={dismissed} share={share} />
     </Suspense>
   );
 }
@@ -170,12 +182,14 @@ function TrackerLoaded({
   today,
   hour,
   dismissed,
+  share,
 }: {
   snapshot: Promise<Snapshot>;
   userId: string;
   today: string;
   hour: number;
   dismissed: string[];
+  share: { title: string; url: string } | null;
 }) {
   const snap = use(snapshot);
   if (!snap.spec) return <Welcome />; // a new account picks what to track before anything else
@@ -189,6 +203,7 @@ function TrackerLoaded({
       initialToday={today}
       initialHour={hour}
       dismissed={dismissed}
+      share={share}
     />
   );
 }
@@ -202,6 +217,7 @@ function TrackerView({
   initialToday,
   initialHour,
   dismissed,
+  share,
 }: {
   initialEntries: Entries;
   initialFocus: Record<string, string>;
@@ -211,6 +227,7 @@ function TrackerView({
   initialToday: string;
   initialHour: number;
   dismissed: string[];
+  share: { title: string; url: string } | null;
 }) {
   const [entries, setEntries] = useState(initialEntries);
   const [focuses, setFocuses] = useState(initialFocus);
@@ -220,7 +237,9 @@ function TrackerView({
   // calendar wins (see the mount effect), so a wrong guess is corrected, never trusted.
   const [today, setToday] = useState(initialToday);
   const [selected, setSelected] = useState(initialToday);
-  const [tab, setTab] = useState<"today" | "patterns" | "journal" | "setup">("today");
+  const [tab, setTab] = useState<Tab>(share ? "shop" : "today");
+  // what was shared in, until you leave Shop (so coming back doesn't fill the box a second time)
+  const [draft, setDraft] = useState(share);
   // a Patterns row can send you to its section in Setup, already open
   const [setupFocus, setSetupFocus] = useState<string | null>(null);
   const [pulse, setPulse] = useState({ date: "", n: 0 });
@@ -274,9 +293,11 @@ function TrackerView({
     setHour(now.getHours());
     rememberZone();
     lastSync.current = Date.now(); // the server just rendered this page: nothing to catch up on yet
+    // opened by Share: take the shared words out of the address, so a reload doesn't repeat them
+    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
 
     // once the page has settled, fetch the other tabs' code quietly so the first visit to each is instant
-    const go = () => (["patterns", "journal", "setup"] as const).forEach(warm);
+    const go = () => (["patterns", "journal", "shop", "setup"] as const).forEach(warm);
     let cancel = () => {};
     const timer = window.setTimeout(() => (cancel = whenIdle(go, 4000)), 2500);
     return () => {
@@ -491,10 +512,12 @@ function TrackerView({
     return deliver(op);
   }
 
-  async function persist(op: Op, okText = "Saved") {
+  async function persist(op: Op, okText = "Saved"): Promise<boolean> {
     say("saving", "Saving…");
-    if (await send(op)) say("saved", okText);
+    const ok = await send(op);
+    if (ok) say("saved", okText);
     else say("error", NOT_SAVED);
+    return ok;
   }
 
   // For typing-driven saves: never pop a toast, only speak up if it failed.
@@ -645,6 +668,8 @@ function TrackerView({
   const started = today ? (startedOn(entries, spec) ?? today) : "";
   // the selected day, as the rules stood then (schedule, what counts as a slip, goals, targets)
   const view = selected ? specAt(spec, selected) : spec;
+  // the symbol in front of amounts in Shop: the one from your own Spending question
+  const currency = currencyOf(spec);
 
   return (
     <div className="mx-auto w-full max-w-xl flex-1 px-4 pb-32 pt-6">
@@ -655,22 +680,26 @@ function TrackerView({
               ? "Patterns"
               : tab === "journal"
                 ? "Journal"
-                : tab === "setup"
-                  ? "Setup"
-                  : selected && selected === today
-                    ? "Today"
-                    : "Earlier"}
+                : tab === "shop"
+                  ? "Shop"
+                  : tab === "setup"
+                    ? "Setup"
+                    : selected && selected === today
+                      ? "Today"
+                      : "Earlier"}
           </h1>
           <p className="truncate text-sm text-soft">
             {tab === "patterns"
               ? "What your days add up to"
               : tab === "journal"
                 ? "What you've written, all in one place"
-                : tab === "setup"
-                  ? "Make it yours"
-                  : selected
-                    ? prettyDate(selected)
-                    : " "}
+                : tab === "shop"
+                  ? "What you actually need"
+                  : tab === "setup"
+                    ? "Make it yours"
+                    : selected
+                      ? prettyDate(selected)
+                      : "\u00a0"}
           </p>
         </div>
         <ThemeToggle />
@@ -783,6 +812,14 @@ function TrackerView({
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
         />
+      ) : tab === "shop" ? (
+        <Shop
+          today={today}
+          currency={currency}
+          draft={draft}
+          getWaiting={() => readBox(userId) ?? box.current}
+          onSend={(op, okText) => (okText ? persist(op, okText) : persistQuiet(op))}
+        />
       ) : (
         <Setup spec={spec} onSave={saveSetup} openId={setupFocus} />
       )}
@@ -793,6 +830,7 @@ function TrackerView({
         tab={tab}
         onTab={(id) => {
           setSetupFocus(null);
+          setDraft(null);
           setTab(id);
         }}
         onWarm={warm}

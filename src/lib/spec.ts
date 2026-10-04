@@ -319,6 +319,16 @@ export function isSlip(field: FieldSpec, value: Data[string] | undefined, dayOve
 export const formatAmount = (f: Extract<FieldSpec, { kind: "amount" }>, n: number) =>
   `${f.prefix}${n.toLocaleString()}${f.suffix ? ` ${f.suffix}` : ""}`;
 
+/**
+ * What a whole-number box becomes when you leave it: what you typed, rounded and pulled into min..max, or
+ * the number it had before if what's in it isn't a number (empty, "e", "-").
+ */
+export function settleWhole(typed: string, current: number, min: number, max: number): number {
+  const text = typed.trim();
+  const n = Math.round(Number(text));
+  return text === "" || !Number.isFinite(n) ? current : Math.max(min, Math.min(max, n));
+}
+
 /** The section's lines in plain words ("< 5h or 5–6h", "Water under 8 glasses"). Empty = nothing can slip. */
 export function slipRules(section: SectionSpec): string[] {
   const out: string[] = [];
