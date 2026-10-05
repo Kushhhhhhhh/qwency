@@ -23,6 +23,7 @@ import {
 import { WEEKDAYS, localKey } from "@/lib/tracker";
 import { ICON_IDS, iconFor } from "@/lib/icons";
 import { canon } from "@/lib/sync";
+import { Appearance } from "./appearance";
 import { Fold } from "./fold";
 import { Chip } from "./ui";
 
@@ -155,6 +156,8 @@ export function Setup({
       {draft.sections.length >= LIMITS.sections && (
         <p className="text-center text-xs text-soft">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
       )}
+
+      <Appearance />
 
       {/* follows you down the page once there's something to save — no scrolling back up,
           and it just quietly disappears on a successful save instead of popping a toast */}

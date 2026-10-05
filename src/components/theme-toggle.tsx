@@ -1,7 +1,7 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { THEME_COLOR, THEME_KEY, type Theme } from "@/lib/theme";
+import { THEME_KEY, syncBarColor, type Theme } from "@/lib/theme";
 
 /**
  * Light / dark, as one small round button that matches the chips and the day strip. It holds no state of
@@ -20,7 +20,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       /* private window: it still switches, it just isn't remembered */
     }
     // the phone's own bar follows (it was set from the device setting, which may not be the choice made here)
-    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", THEME_COLOR[next]));
+    syncBarColor();
   }
 
   return (

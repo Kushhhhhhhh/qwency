@@ -58,7 +58,7 @@ type Props = {
 
 type Load = { status: "loading" | "ready" | "setup" | "error"; items: Item[]; budgets: Record<string, number>; loaded: Record<string, true> };
 
-const PASTELS = ["bg-pastel-lilac", "bg-meh", "bg-good"];
+const PASTELS = ["bg-tile-1", "bg-tile-2", "bg-tile-3"];
 const FIRST = -12; // how far back / ahead you can look, in months
 const LAST = 6;
 

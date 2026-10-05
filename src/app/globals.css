@@ -11,6 +11,12 @@
  *   surface  what "white" panels are made of
  *   shade    the tint of shadows
  * lilac / good / meh / bad keep their meaning in both themes; onpastel is the text that sits on them.
+ *
+ * Two independent switches live on <html>: data-theme (light | dark) and data-palette (which colours:
+ * qwency | autumn | ocean | mono, set before the first paint by the script in src/lib/theme.ts). A palette
+ * swaps the same variables the dark theme does, so everything built from them follows for free. What a
+ * palette may NOT do: make the pastel tiles dark (their text is fixed dark-on-pastel), or make good / meh /
+ * bad look alike (the Patterns map reads by them). Text on every one of them stays at 4.5:1 or better.
  */
 @theme {
   --color-lilac: #c4c3e3;
@@ -24,12 +30,25 @@
   --color-shade: #504e76;
   --color-danger: #c2410c;
   --color-onpastel: #1f1d38;
-  /* the pastel lilac as a fixed swatch (--color-lilac itself goes quieter in dark) */
-  --color-pastel-lilac: #c4c3e3;
+  /* the three flat colours the section cards cycle through (Today, Patterns, Shop); a palette may recolour them */
+  --color-tile-1: #c4c3e3;
+  --color-tile-2: #fcdd9d;
+  --color-tile-3: #a3b565;
 }
 
 @theme inline {
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* what a tile's own text and controls are made of (a tile is a light island, in both themes) */
+html,
+[data-palette="qwency"] {
+  --tile-ink: #35335a;
+  --tile-soft: #3c3a62;
+  --tile-cream: #fdf8e2;
+  --tile-surface: #ffffff;
+  --tile-shade: #504e76;
+  --tile-danger: #721f03;
 }
 
 html {
@@ -53,6 +72,136 @@ html[data-theme="dark"] {
   --color-lilac: #5b5990;
   --wash-a: color-mix(in oklab, #6f6db0 22%, transparent);
   --wash-b: color-mix(in oklab, #fcdd9d 5%, transparent);
+}
+
+
+/* ---- palettes ----
+   [data-palette] (not html[...]) so the little previews in Setup can wear a palette too. The dark
+   variants need both attributes on one element, which only <html> has: previews always show the light
+   face. Every palette sets the same list of variables, so adding one means filling in the same blanks. */
+
+/* the original look, spelled out so a preview of it doesn't borrow the page's current palette */
+[data-palette="qwency"] {
+  --color-lilac: #c4c3e3;
+  --color-ink: #504e76;
+  --color-cream: #fdf8e2;
+  --color-good: #a3b565;
+  --color-meh: #fcdd9d;
+  --color-bad: #f1642e;
+  --color-soft: #6a688c;
+  --color-surface: #ffffff;
+  --color-shade: #504e76;
+  --color-danger: #c2410c;
+  --color-onpastel: #1f1d38;
+  --color-tile-1: #c4c3e3;
+  --color-tile-2: #fcdd9d;
+  --color-tile-3: #a3b565;
+}
+
+/* Autumn: cornsilk, saddle brown, apricot, wheat and sage */
+[data-palette="autumn"] {
+  --color-lilac: #f0c7a0;
+  --color-ink: #7a3e12;
+  --color-cream: #fff6da;
+  --color-good: #8aa443;
+  --color-meh: #f4d27c;
+  --color-bad: #e2582f;
+  --color-soft: #8a5330;
+  --color-surface: #fffcf2;
+  --color-shade: #7a3e12;
+  --color-danger: #b3380a;
+  --color-onpastel: #2b1707;
+  --color-tile-1: #f0c7a0;
+  --color-tile-2: #f5d98c;
+  --color-tile-3: #b4c274;
+  --tile-ink: #3d2210;
+  --tile-soft: #4a2b15;
+  --tile-cream: #fff6da;
+  --tile-surface: #fffcf2;
+  --tile-shade: #7a3e12;
+  --tile-danger: #6e1d02;
+}
+html[data-theme="dark"][data-palette="autumn"] {
+  --color-cream: #1d1510;
+  --color-ink: #f3e4cf;
+  --color-soft: #cfb79c;
+  --color-surface: #2f2218;
+  --color-shade: #000000;
+  --color-danger: #ff9166;
+  --color-lilac: #6b4423;
+  --wash-a: color-mix(in oklab, #b8692a 22%, transparent);
+  --wash-b: color-mix(in oklab, #f4d27c 5%, transparent);
+}
+
+/* Ocean: pale foam, deep blue ink, sky, sand and seafoam */
+[data-palette="ocean"] {
+  --color-lilac: #a8dcf2;
+  --color-ink: #1b4f72;
+  --color-cream: #e3f5f9;
+  --color-good: #5fb372;
+  --color-meh: #fde08a;
+  --color-bad: #ef5350;
+  --color-soft: #3b6a8a;
+  --color-surface: #f9feff;
+  --color-shade: #1b4f72;
+  --color-danger: #b43c0c;
+  --color-onpastel: #0b2233;
+  --color-tile-1: #a8dcf2;
+  --color-tile-2: #fbe49c;
+  --color-tile-3: #a4d9ab;
+  --tile-ink: #0e3550;
+  --tile-soft: #1c4966;
+  --tile-cream: #e3f5f9;
+  --tile-surface: #ffffff;
+  --tile-shade: #1b4f72;
+  --tile-danger: #7a2308;
+}
+html[data-theme="dark"][data-palette="ocean"] {
+  --color-cream: #0c1a22;
+  --color-ink: #dff2f9;
+  --color-soft: #9fc4d7;
+  --color-surface: #15303c;
+  --color-shade: #000000;
+  --color-danger: #ff8f73;
+  --color-lilac: #1f5c7a;
+  --wash-a: color-mix(in oklab, #2b93c4 22%, transparent);
+  --wash-b: color-mix(in oklab, #fde08a 5%, transparent);
+}
+
+/* Mono: paper and ink, greys for the tiles. Good / meh / bad stay muted colours on purpose: the Patterns
+   map and the day dots are read by them, and grey-on-grey would make a slip look like a good day. */
+[data-palette="mono"] {
+  --color-lilac: #d6d6da;
+  --color-ink: #111111;
+  --color-cream: #fafafa;
+  --color-good: #76905f;
+  --color-meh: #e0c878;
+  --color-bad: #d2583a;
+  --color-soft: #595959;
+  --color-surface: #ffffff;
+  --color-shade: #111111;
+  --color-danger: #a9280a;
+  --color-onpastel: #111111;
+  --color-tile-1: #d6d6da;
+  --color-tile-2: #e8e8e8;
+  --color-tile-3: #bdbdbd;
+  --tile-ink: #111111;
+  --tile-soft: #2e2e2e;
+  --tile-cream: #fafafa;
+  --tile-surface: #ffffff;
+  --tile-shade: #111111;
+  --tile-danger: #7a1f06;
+}
+html[data-theme="dark"][data-palette="mono"] {
+  --color-cream: #111111;
+  --color-ink: #eeeeee;
+  --color-soft: #b3b3b3;
+  --color-surface: #1f1f1f;
+  --color-shade: #000000;
+  --color-danger: #ff8a66;
+  --color-lilac: #3b3b3b;
+  --wash-a: color-mix(in oklab, #8a8a8a 18%, transparent);
+  --wash-b: color-mix(in oklab, #ffffff 3%, transparent);
 }
 
 body {
@@ -90,16 +239,16 @@ html[data-theme="dark"] .card {
 /* Flat, fully-colored panels for the Today and Patterns section cards — cycled across the
    palette for visual rhythm (not tied to good/meh/bad meaning, which stays reserved for
    actual answers and data, e.g. the mood buttons and the Stats tile values).
-   They are the same soft pastels in both themes, so inside one the colours go back to the light
-   palette (a touch deeper, so text clears 4.5:1 even on the olive one). */
+   They are the same soft pastels in both themes, so inside one the colours go back to the palette's
+   light face (a touch deeper, so text clears 4.5:1 even on the olive one). */
 .tile {
-  --color-ink: #35335a;
-  --color-soft: #3c3a62;
-  --color-cream: #fdf8e2;
-  --color-surface: #ffffff;
-  --color-shade: #504e76;
-  --color-lilac: #c4c3e3;
-  --color-danger: #721f03;
+  --color-ink: var(--tile-ink);
+  --color-soft: var(--tile-soft);
+  --color-cream: var(--tile-cream);
+  --color-surface: var(--tile-surface);
+  --color-shade: var(--tile-shade);
+  --color-lilac: var(--color-tile-1);
+  --color-danger: var(--tile-danger);
   color: var(--color-ink);
   color-scheme: light;
   border: none;
@@ -109,9 +258,9 @@ html[data-theme="dark"] .card {
 html[data-theme="dark"] .tile {
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
-.tile-lilac { background: var(--color-lilac); }
-.tile-meh { background: var(--color-meh); }
-.tile-good { background: var(--color-good); }
+.tile-lilac { background: var(--color-tile-1); }
+.tile-meh { background: var(--color-tile-2); }
+.tile-good { background: var(--color-tile-3); }
 
 /* ---- chips ---- */
 /* in the components layer so utilities like bg-ink win over these defaults */

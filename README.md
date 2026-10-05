@@ -226,6 +226,26 @@ head applies it before anything is drawn (`src/lib/theme.ts`), so a dark screen 
 - Clerk's sign-in card and avatar menu take the app's colours through the same variables. The install
   icon's splash colour and the manifest can't change per theme, so they stay cream.
 
+### Palettes (seasonal colours)
+
+Light/dark is one choice; **which colours** is another, in Setup under "Colours": Qwency (the original),
+Autumn, Ocean, Mono, or **Auto**, which follows the month (winter Mono, spring Qwency, summer Ocean,
+autumn Autumn; the table is `SEASONS` in `src/lib/theme.ts`). Auto is the default. The pick is kept on
+this device, like light/dark, so each friend wears their own. Only colours change, never your days.
+
+- **How it works.** `<html>` carries `data-theme` (light | dark) and `data-palette`. The head script sets
+  both before the first paint. A palette is one block in `globals.css` that sets the same variables dark
+  mode swaps (plus the three tile colours and the tile text), and every palette except Qwency has a dark
+  face (`html[data-theme="dark"][data-palette="…"]`). Nothing in a component knows which palette is on.
+- **Adding one** means copying a block, filling in the same blanks, adding its name to `PALETTES`, giving
+  it a season, and running the contrast audit (it reads each palette in both modes from the stylesheet).
+- **Two rules a palette keeps.** The pastel tiles stay light (their text is fixed dark-on-pastel), and
+  good / meh / bad stay three clearly different colours, because the Patterns map and the day dots are
+  read by them. That is why Mono greys the tiles and chrome but keeps those three as muted colours
+  instead of greys. Tiles take their colours from `--color-tile-1..3`, not from good / meh / bad.
+- The phone's own bar (`theme-color`) is set from the page's real background once styles arrive, and
+  again whenever the theme or palette changes, so it matches every palette without a table of colours.
+
 ## Readability
 
 Soft text (hints, captions, placeholders) is one colour, `text-soft`, picked to clear 4.5:1 on every
