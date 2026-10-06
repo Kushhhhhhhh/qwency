@@ -41,6 +41,7 @@ import {
   type Mood,
 } from "@/lib/tracker";
 import { TZ_COOKIE } from "@/lib/clock";
+import { SHOP_COOKIE } from "@/lib/theme";
 import { emptyBox, isEmpty, overlayEntries, overlayFocus, overlayPlans, pendingOps, queue, settle, waitingKeys, type Box, type Op } from "@/lib/outbox";
 import { readBox, writeBox } from "@/lib/outbox-store";
 import { currencyOf } from "@/lib/shop";
@@ -93,7 +94,7 @@ function rememberZone() {
 }
 
 type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
-type ToastApi = { say: (kind: Status["kind"], text: string) => void };
+type ToastApi = { say: (kind: Status["kind"], text: string, hold?: number) => void };
 
 /** The little "Saving..." / "Saved" pill. It holds its own state, so each blink of it costs one tiny render instead of the whole screen. */
 function Toast({ api }: { api: Ref<ToastApi> }) {
@@ -102,10 +103,12 @@ function Toast({ api }: { api: Ref<ToastApi> }) {
   useImperativeHandle(
     api,
     () => ({
-      say(kind, text) {
+      say(kind, text, hold) {
         if (timer.current) clearTimeout(timer.current);
         setStatus((st) => ({ kind, text, id: st.id + 1 }));
-        if (kind === "saved") timer.current = setTimeout(() => setStatus((st) => ({ ...st, kind: "idle" })), 1600);
+        // a plain "Saved" goes quickly; a heads-up that has to be read stays as long as it was asked to
+        const ms = hold ?? (kind === "saved" ? 1600 : 0);
+        if (ms > 0) timer.current = setTimeout(() => setStatus((st) => ({ ...st, kind: "idle" })), ms);
       },
     }),
     [],
@@ -243,7 +246,10 @@ function TrackerView({
   // calendar wins (see the mount effect), so a wrong guess is corrected, never trusted.
   const [today, setToday] = useState(initialToday);
   const [selected, setSelected] = useState(initialToday);
-  const [tab, setTab] = useState<Tab>(share ? "shop" : "today");
+  const [picked, setTab] = useState<Tab>(share && initialSpec.shop ? "shop" : "today");
+  // Shop is a page only while it's switched on (in Setup): if it's switched off from another device while it
+  // is open, or something is shared in while it's off, you are simply on Today
+  const tab: Tab = picked === "shop" && !spec.shop ? "today" : picked;
   // what was shared in, until you leave Shop (so coming back doesn't fill the box a second time)
   const [draft, setDraft] = useState(share);
   // a Patterns row can send you to its section in Setup, already open
@@ -287,6 +293,10 @@ function TrackerView({
   }, [today, selected, tab, spec, focuses, plans]);
 
   useEffect(() => {
+    document.cookie = `${SHOP_COOKIE}=${spec.shop ? 1 : 0}; path=/; max-age=31536000; samesite=lax`;
+  }, [spec.shop]);
+
+  useEffect(() => {
     const now = new Date();
     const t = localKey(now);
     if (t !== todayRef.current) {
@@ -301,9 +311,11 @@ function TrackerView({
     lastSync.current = Date.now(); // the server just rendered this page: nothing to catch up on yet
     // opened by Share: take the shared words out of the address, so a reload doesn't repeat them
     if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
+    // something was shared in from a shop's app but Shop is off: say so (Today is where you land)
+    if (share && !specRef.current.shop) toast.current?.say("saving", "Shop is off. Switch it on in Setup, then share again.", 5000);
 
     // once the page has settled, fetch the other tabs' code quietly so the first visit to each is instant
-    const go = () => (["patterns", "journal", "shop", "setup"] as const).forEach(warm);
+    const go = () => (["patterns", "journal", "shop", "setup"] as const).filter((t) => t !== "shop" || specRef.current.shop).forEach(warm);
     let cancel = () => {};
     const timer = window.setTimeout(() => (cancel = whenIdle(go, 4000)), 2500);
     return () => {
@@ -337,8 +349,8 @@ function TrackerView({
   }
 
   /** A line in the little pill at the bottom of the screen. */
-  function say(kind: Status["kind"], text: string) {
-    toast.current?.say(kind, text);
+  function say(kind: Status["kind"], text: string, hold?: number) {
+    toast.current?.say(kind, text, hold);
   }
 
   /** Record a change in the outbox (here and in this browser's storage). Reads storage first, so a second open tab's changes aren't lost. */
@@ -879,6 +891,7 @@ function TrackerView({
 
       <Nav
         tab={tab}
+        shop={spec.shop === true}
         onTab={(id) => {
           setSetupFocus(null);
           setDraft(null);

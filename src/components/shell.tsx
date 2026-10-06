@@ -15,11 +15,15 @@ const TABS = [
   ["setup", "Setup", Settings2],
 ] as const;
 
-/** The bottom bar. Without `onTab` it is just the picture of it (shown while the app is loading). */
-export function Nav({ tab, onTab, onWarm }: { tab: Tab; onTab?: (t: Tab) => void; onWarm?: (t: Tab) => void }) {
+/**
+ * The bottom bar. Without `onTab` it is just the picture of it (shown while the app is loading), which doesn't
+ * know yet whether Shop is on: it carries the tab and the page hides it unless the head script saw the cookie
+ * (see SHOP_COOKIE). The live bar is told (`shop`) and draws exactly the tabs you have.
+ */
+export function Nav({ tab, shop, onTab, onWarm }: { tab: Tab; shop?: boolean; onTab?: (t: Tab) => void; onWarm?: (t: Tab) => void }) {
   return (
     <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-ink/10 bg-surface/90 p-1 shadow-xl shadow-shade/15 backdrop-blur-md">
-      {TABS.map(([id, label, Icon]) => (
+      {TABS.filter(([id]) => id !== "shop" || shop !== false).map(([id, label, Icon]) => (
         <button
           key={id}
           type="button"
@@ -30,7 +34,7 @@ export function Nav({ tab, onTab, onWarm }: { tab: Tab; onTab?: (t: Tab) => void
           onTouchStart={onWarm ? () => onWarm(id) : undefined}
           aria-current={tab === id}
           aria-label={label}
-          className={`flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-[background-color,color,transform] duration-200 active:scale-95 sm:px-4 ${
+          className={`${id === "shop" && shop === undefined ? "nav-shop " : ""}flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-[background-color,color,transform] duration-200 active:scale-95 sm:px-4 ${
             tab === id ? "bg-ink text-cream" : "text-soft hover:text-ink"
           }`}
         >

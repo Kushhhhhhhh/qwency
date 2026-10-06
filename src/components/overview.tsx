@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { AWAY_REASONS, awayLabel, awayOf, dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { buildMirrorOver, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
-import { cleanRun, findLinks, trendLine, weekdayShape, type Link, type Trend } from "@/lib/insights";
+import { cleanRun, trendLine, weekdayShape, type Trend } from "@/lib/insights";
+import { findFacts, type Fact, type Facts } from "@/lib/facts";
 import type { MonthPlan } from "@/lib/goals";
 import { iconFor } from "@/lib/icons";
 import {
@@ -18,6 +19,7 @@ import {
   type Entries,
   type Mood,
 } from "@/lib/tracker";
+import { Fold } from "./fold";
 import { MonthCard, MonthReview, worthReviewing } from "./month";
 
 const WEEKS = 10;
@@ -81,10 +83,10 @@ export function Overview(p: Props) {
           : { dates: monthDates(addMonths(lastMonth, -1)), label: monthName(addMonths(lastMonth, -1)) };
   const trend = trendLine(p.spec, p.entries, p.today, dates, earlier.dates, earlier.label, mirror);
   const shape = weekdayShape(mirror);
-  // the last 90 days are read three ways (the run without a gap, what goes with what): built once
-  const m90 = buildMirrorOver(p.spec, p.entries, p.today, trailing(90));
-  const run = cleanRun(p.spec, p.entries, p.today, 90, m90);
-  const links = findLinks(p.spec, p.entries, p.today, 90, 2, m90);
+  // the run without a gap is read over the last 90 days
+  const run = cleanRun(p.spec, p.entries, p.today, 90, buildMirrorOver(p.spec, p.entries, p.today, trailing(90)));
+  // what only your own days say: counted, with the days they came from
+  const facts = findFacts(p.spec, p.entries, p.today);
 
   const common = { entries: p.entries, today: p.today, spec: p.spec, onPlan: p.onPlan };
   // a month that just ended is looked at for its first ten days, if it had a plan worth looking back at
@@ -116,7 +118,7 @@ export function Overview(p: Props) {
           { id: "last", label: monthName(lastMonth, "short") },
         ]}
       />
-      <Noticing links={links} />
+      <Noticing facts={facts} onPick={p.onPick} />
       {(mirror.totals.planned > 0 || mirror.away.length > 0) && <Legend withAway={mirror.away.length > 0} />}
       {mirror.rows.map((r) => (
         <Row key={r.id} row={r} compact={dates.length > 7} onPick={p.onPick} onSetup={p.onSetup} />
@@ -239,21 +241,65 @@ function Hero({
   );
 }
 
-/** Patterns the data shows between sections, in counts, never as a claim about why. */
-function Noticing({ links }: { links: Link[] }) {
-  if (links.length === 0) return null;
+/**
+ * What the days say that only your own days could: counted, never guessed, and never a claim about why. Every line
+ * carries its counts and can be checked against the days it came from. It stays quiet until there are enough days to
+ * compare, and says so, rather than finding something in too little.
+ */
+function Noticing({ facts, onPick }: { facts: Facts; onPick: (date: string) => void }) {
+  if (facts.judged === 0) return null; // nothing logged yet: the mirror above already says so
   return (
-    <section className="card p-5">
+    <section className="card p-5" aria-label="Worth noticing">
       <p className="text-xs font-medium uppercase tracking-wider text-soft">Worth noticing</p>
-      <ul className="mt-2 flex flex-col gap-2.5">
-        {links.map((l) => (
-          <li key={l.text} className="text-[15px] leading-snug">
-            {l.text}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 text-xs text-soft">From your last 90 days. What went together so far, not proof of cause.</p>
+      {facts.need > 0 ? (
+        <p className="mt-2 text-sm leading-snug text-soft">
+          This starts after about 3 weeks of logging, once there are enough days to compare. {facts.need} more logged {facts.need === 1 ? "day" : "days"} to go.
+        </p>
+      ) : facts.facts.length === 0 ? (
+        <p className="mt-2 text-sm leading-snug text-soft">
+          Nothing clearly stands out in your last {facts.judged} logged days. Only what holds up is shown, so a quiet card is a fine answer.
+        </p>
+      ) : (
+        <>
+          <ul className="mt-2 flex flex-col gap-3.5">
+            {facts.facts.map((f) => (
+              <FactRow key={f.id} fact={f} onPick={onPick} />
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-soft">From your last {facts.judged} logged days. What went together so far, not proof of cause.</p>
+        </>
+      )}
     </section>
+  );
+}
+
+function FactRow({ fact, onPick }: { fact: Fact; onPick: (date: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <p className="text-[15px] leading-snug">{fact.text}</p>
+      {fact.days.length > 0 && (
+        <>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            className="mt-1 text-xs font-medium text-soft underline underline-offset-2 transition-colors hover:text-ink"
+          >
+            {open ? "Hide the days" : "See the days"}
+          </button>
+          <Fold open={open}>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {fact.days.map((d) => (
+                <button key={d} type="button" onClick={() => onPick(d)} className="chip rounded-full px-3 py-1.5 text-xs font-medium">
+                  {shortDate(d)}
+                </button>
+              ))}
+            </div>
+          </Fold>
+        </>
+      )}
+    </li>
   );
 }
 

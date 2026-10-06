@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, Plus, RotateCcw, ShoppingBag, Trash2 } from "lucide-react";
 import {
   DEFAULT_SPEC,
   breakdownOf,
@@ -14,6 +14,7 @@ import {
   schedulePreset,
   settleWhole,
   uniqueSlug,
+  withShop,
   type FieldSpec,
   type HabitSpec,
   type OptionSpec,
@@ -47,10 +48,12 @@ export function Setup({
 }) {
   const [draft, setDraft] = useState(spec);
   const [save, setSave] = useState<Save>("idle");
+  const [shopSave, setShopSave] = useState<Save>("idle");
   // Collapsed by default — editing one section shouldn't mean scrolling past every other one.
   const [open, setOpen] = useState<Set<string>>(new Set(openId ? [openId] : []));
-  // history (`past`) and removed options (`gone`) are kept by the server, not edited here, so they never count as an unsaved change
-  const dirty = canon(draft, "past", "gone") !== canon(spec, "past", "gone");
+  // history (`past`) and removed options (`gone`) are kept by the server, not edited here, so they never count as an unsaved
+  // change; neither does Shop, which is switched on or off at once (below) and never waits for the Save pill
+  const dirty = canon(draft, "past", "gone", "shop") !== canon(spec, "past", "gone", "shop");
 
   function toggle(id: string) {
     setOpen((o) => {
@@ -62,9 +65,16 @@ export function Setup({
 
   async function handleSave() {
     setSave("saving");
-    const ok = await onSave(draft);
+    const ok = await onSave(withShop(draft, spec.shop));
     setSave(ok ? "saved" : "error");
     if (ok) setTimeout(() => setSave("idle"), 1800);
+  }
+
+  /** Shop is saved on its own and right away: only that changes, whatever else in the draft is still unsaved. */
+  async function setShop(on: boolean) {
+    setShopSave("saving");
+    const ok = await onSave(withShop(spec, on));
+    setShopSave(ok ? "idle" : "error");
   }
 
   function updateSection(i: number, patch: Partial<SectionSpec>) {
@@ -156,6 +166,36 @@ export function Setup({
       {draft.sections.length >= LIMITS.sections && (
         <p className="text-center text-xs text-soft">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
       )}
+
+      <section className="card p-4">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={spec.shop === true}
+          disabled={shopSave === "saving"}
+          onClick={() => setShop(spec.shop !== true)}
+          className="flex w-full items-center gap-3 text-left disabled:opacity-60"
+        >
+          <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-lilac/50">
+            <ShoppingBag size={20} strokeWidth={1.8} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold leading-tight">Shop</span>
+            <span className="mt-0.5 block text-sm leading-snug text-soft">Your monthly pocket</span>
+            <span className="mt-1 block text-sm font-medium leading-snug">
+              {spec.shop ? "On. See the bag in the bar." : "Off. Tap to add it to the bar."}
+            </span>
+          </span>
+          <span aria-hidden className="switch">
+            <span className="switch-knob" />
+          </span>
+        </button>
+        {shopSave === "error" && (
+          <p role="alert" className="mt-2 text-sm font-medium text-danger">
+            Couldn&apos;t save, try again.
+          </p>
+        )}
+      </section>
 
       <Appearance />
 

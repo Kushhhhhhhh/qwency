@@ -52,7 +52,14 @@ export type SectionSpec = {
   fields: FieldSpec[];
 };
 
-export type HabitSpec = { sections: SectionSpec[] };
+export type HabitSpec = {
+  sections: SectionSpec[];
+  /** the Shop page is switched on (it is off for everyone until they choose it in Setup) */
+  shop?: boolean;
+};
+
+/** The same setup with Shop switched on or off. Off is simply the absence of the flag. */
+export const withShop = (spec: HabitSpec, on: boolean | undefined): HabitSpec => ({ sections: spec.sections, ...(on ? { shop: true } : {}) });
 
 // ---- schedules: when a section is expected ----
 
@@ -906,7 +913,7 @@ export function sanitizeSpec(input: unknown): HabitSpec {
     sections.push({ id, title, hint, icon, days, ...(since ? { since } : {}), ...(past.length ? { past } : {}), fields });
   }
 
-  return { sections: sections.length ? sections : DEFAULT_SPEC.sections };
+  return withShop({ sections: sections.length ? sections : DEFAULT_SPEC.sections }, src.shop === true);
 }
 
 function sanitizeDays(input: unknown): number[] | null {

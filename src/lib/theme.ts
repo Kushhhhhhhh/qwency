@@ -34,8 +34,16 @@ export function paletteFor(saved: unknown, month: number): Palette {
   return isPalette(saved) ? saved : SEASONS[(((Math.trunc(month) || 0) % 12) + 12) % 12];
 }
 
+/**
+ * Whether Shop is switched on is part of your setup (so it follows you to every device). A small cookie keeps a
+ * copy here, so the bottom bar in the loading picture is drawn with the right tabs from the first paint:
+ * the head script below turns it into `data-shop="1"` on <html>, and the picture hides its Shop tab without it.
+ * Otherwise the bar would be drawn with one tab too many and lose it once the page wakes up.
+ */
+export const SHOP_COOKIE = "qs";
+
 /** Runs in the head, before anything is drawn. Must stay tiny, dependency-free and never throw. Reading the saved choices, asking the device and setting each attribute are separate steps, so blocked storage still follows the device and a failure in one never stops the others. The last lines tell the phone's bar what colour the page really is, once the styles have arrived. */
-export const THEME_SCRIPT = `(function(){var d=document.documentElement,t=null,p=null;try{t=localStorage.getItem("${THEME_KEY}");p=localStorage.getItem("${PALETTE_KEY}")}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";d.setAttribute("data-theme",t)}catch(e){}try{if(${JSON.stringify(PALETTES)}.indexOf(p)<0)p=${JSON.stringify(SEASONS)}[new Date().getMonth()];d.setAttribute("data-palette",p);var b=function(){var c=getComputedStyle(d).backgroundColor;if(c!=="rgba(0, 0, 0, 0)")document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute("content",c)})};document.addEventListener("DOMContentLoaded",b);addEventListener("load",b)}catch(e){}})()`;
+export const THEME_SCRIPT = `(function(){var d=document.documentElement,t=null,p=null;try{t=localStorage.getItem("${THEME_KEY}");p=localStorage.getItem("${PALETTE_KEY}")}catch(e){}try{if(document.cookie.indexOf("${SHOP_COOKIE}=1")>=0)d.setAttribute("data-shop","1")}catch(e){}try{if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";d.setAttribute("data-theme",t)}catch(e){}try{if(${JSON.stringify(PALETTES)}.indexOf(p)<0)p=${JSON.stringify(SEASONS)}[new Date().getMonth()];d.setAttribute("data-palette",p);var b=function(){var c=getComputedStyle(d).backgroundColor;if(c!=="rgba(0, 0, 0, 0)")document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute("content",c)})};document.addEventListener("DOMContentLoaded",b);addEventListener("load",b)}catch(e){}})()`;
 
 /** After the theme or palette changes: make the phone's own bar match the page it sits over. */
 export function syncBarColor() {

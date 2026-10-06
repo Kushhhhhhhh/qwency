@@ -268,6 +268,48 @@ html[data-theme="dark"] .tile {
   background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-ink) 18%, transparent) 0 2px, transparent 2px 5px);
 }
 
+/* The loading picture of the bottom bar doesn't know yet whether Shop is on: its Shop tab shows only when the
+   head script saw the cookie that says so (see SHOP_COOKIE in lib/theme.ts). */
+html:not([data-shop="1"]) .nav-shop {
+  display: none;
+}
+
+/* A switch (Setup -> Pages -> Shop). Off: a pale track with the knob on the left. On: an ink track with the knob on the
+   right. Both have an outline you can see against the card, and the words "Off" / "On" are written beside it, so the
+   state never rests on colour alone. */
+.switch {
+  position: relative;
+  display: block;
+  width: 3.25rem;
+  height: 1.875rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklab, var(--color-ink) 75%, transparent);
+  background: color-mix(in oklab, var(--color-ink) 10%, var(--color-surface));
+  transition: background-color 200ms, border-color 200ms;
+}
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 9999px;
+  transform: translateY(-50%);
+  background: var(--color-surface);
+  border: 1px solid color-mix(in oklab, var(--color-ink) 75%, transparent);
+  box-shadow: 0 1px 3px color-mix(in oklab, var(--color-shade) 30%, transparent);
+  transition: left 200ms, background-color 200ms, border-color 200ms;
+}
+[role="switch"][aria-checked="true"] .switch {
+  background: var(--color-ink);
+  border-color: var(--color-ink);
+}
+[role="switch"][aria-checked="true"] .switch-knob {
+  left: calc(100% - 1.575rem);
+  background: var(--color-cream);
+  border-color: var(--color-cream);
+}
+
 /* ---- chips ---- */
 /* in the components layer so utilities like bg-ink win over these defaults */
 @layer components {
@@ -339,6 +381,6 @@ html[data-theme="dark"] .tile {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .chip, .fold, .fold > div { transition: none; }
+  .chip, .fold, .fold > div, .switch, .switch-knob { transition: none; }
   .chip[data-on="true"], .check-pop, .rise, .toast-in, .cell-in, .bump { animation: none; }
 }

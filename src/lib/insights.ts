@@ -1,5 +1,5 @@
 import { addDays, weekdayIndex, type Entries } from "./tracker";
-import { buildMirrorOver, type Cell, type Mirror, type RowMirror } from "./mirror";
+import { buildMirrorOver, type Cell, type Mirror } from "./mirror";
 import { formatAmount, isSlip, startedOn, targetOf, type HabitSpec } from "./spec";
 
 // Small, honest read-outs on top of the mirror. Everything here is derived from the days you
@@ -153,72 +153,3 @@ export function weekdayShape(mirror: Mirror): { day: string; gaps: number; plann
   if (best < 0 || bestRate < overall * 1.6 || bestRate - overall < 0.15) return null;
   return { day: FULL_DAYS[best], gaps: gaps[best], planned: planned[best] };
 }
-
-export type Link = { text: string; cause: string; effect: string; withCause: [number, number]; without: [number, number] };
-
-/**
- * "When X slips, Y tends to." Looks at the last 90 days, same-day only, across every pair of
- * sections (and the day verdict). It only speaks when there's real evidence: at least four slips
- * to learn from and six clean days to compare against, the effect at least half the time when X
- * slips, and at least 35 points more often than when X was fine. It says what happened, in counts,
- * never why. At most `max` links, each section used once, so two links are two different stories.
- * Pass `mirror` (built over the last `days` days) when the caller already has one.
- */
-export function findLinks(spec: HabitSpec, entries: Entries, today: string, days = 90, max = 2, mirror?: Mirror): Link[] {
-  const dates = trailing(today, days);
-  const m = mirror ?? buildMirrorOver(spec, entries, today, dates);
-  if (m.startedOn === null) return [];
-
-  type Candidate = { a: RowMirror; b: RowMirror; n1: number; b1: number; n0: number; b0: number; score: number };
-  const found: Candidate[] = [];
-  for (const a of m.rows) {
-    for (const b of m.rows) {
-      if (a.id === b.id) continue;
-      let n1 = 0;
-      let b1 = 0;
-      let n0 = 0;
-      let b0 = 0;
-      for (let i = 0; i < dates.length; i++) {
-        const sa = a.cells[i].state;
-        const sb = b.cells[i].state;
-        // the day verdict can only be Rough (slipped) or fine; an unlogged verdict says nothing
-        const effect = b.id === "__day" ? sb === "slipped" : isGap(sb);
-        const judged = b.id === "__day" ? sb === "slipped" || sb === "done" : isGap(sb) || sb === "done";
-        if (!judged) continue;
-        if (sa === "slipped") {
-          n1++;
-          if (effect) b1++;
-        } else if (sa === "done") {
-          n0++;
-          if (effect) b0++;
-        }
-      }
-      if (n1 < 4 || n0 < 6) continue;
-      const r1 = b1 / n1;
-      const r0 = b0 / n0;
-      if (r1 < 0.5 || r1 - r0 < 0.35) continue;
-      found.push({ a, b, n1, b1, n0, b0, score: (r1 - r0) * Math.sqrt(n1) });
-    }
-  }
-  found.sort((x, y) => y.score - x.score);
-
-  const out: Link[] = [];
-  const used = new Set<string>();
-  for (const c of found) {
-    if (out.length >= max) break;
-    if (used.has(c.a.id) || used.has(c.b.id)) continue;
-    used.add(c.a.id);
-    used.add(c.b.id);
-    const cause = c.a.id === "__day" ? "On Rough days" : `When ${c.a.title} slips`;
-    const effect = c.b.id === "__day" ? `the day was Rough ${c.b1} of ${c.n1} times` : `${c.b.title} had a gap ${c.b1} of ${c.n1} times`;
-    out.push({
-      cause,
-      effect,
-      text: `${cause}, ${effect}, against ${c.b0} of ${c.n0} otherwise.`,
-      withCause: [c.b1, c.n1],
-      without: [c.b0, c.n0],
-    });
-  }
-  return out;
-}
-

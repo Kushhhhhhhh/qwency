@@ -168,11 +168,30 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   the difference. Closing it or finishing is remembered per week (the same small cookie as the catch-up,
   written "w" + that week's Monday). A day with no verdict is explained by whatever reasons its unlogged
   sections were given, so Patterns and the check-in always agree on what is still unexplained.
-- **Patterns says more, carefully** (all in `src/lib/insights.ts`, all derived, nothing new to log):
-  how this window compares with the one before (skipped when the earlier window began before you
-  did), the weekday that slips clearly more than the rest (needs about a month), and "worth
-  noticing": when X slips, Y tends to (last 90 days, same-day only, at least 4 slips and 6 clean
-  days to compare, a 35-point difference). It reports counts, never a cause.
+- **Patterns says more, carefully** (all derived, nothing new to log): how this window compares with
+  the one before (skipped when the earlier window began before you did, `src/lib/insights.ts`), the
+  weekday that slips clearly more than the rest (needs about a month), and "worth noticing", below.
+- **Worth noticing: the fact engine** (`src/lib/facts.ts`, no AI, no network). What only your own days can
+  say, found by counting. Each day becomes a few yes / no / unknown facts (Sleep slipped, Gym was
+  Skipped, the day was Rough, it was a Friday, nothing was logged) and every pair is asked: does one go
+  with the other, the same day or the day after? A pair is only reported when all of this holds:
+  enough days on both sides; a gap of at least 30 points between the two rates; Fisher's exact test
+  survives **Benjamini-Hochberg** over *every* question asked (with Tarone's rule, so pairs that could
+  never give strong evidence don't raise the bar; questions about whole sections, the mood and the
+  weekday are corrected as one group, the many about single answers as another with a stricter bar); it **shows up the same way
+  in both halves** of the window; and it beats the days **lined up against themselves shifted along**
+  (so a streak or a trip week that happens to line up doesn't count, nor two things that both happen on
+  the same weekdays: those are told as the weekday facts instead). Only what was answered is compared (a
+  day the cause wasn't logged is not "the other group"), an away day is never looked at, and "a section
+  left blank" only counts on a day something else was logged. A day you logged nothing at all is its own
+  fact ("On weekends, nothing was logged 24 of 24 times"; "The day after a Rough day, nothing was
+  logged"), and only between your first and latest day. A second kind says which shared reason you name
+  for a section's gaps against everyone else's ("You named “Tired” for 9 of 12 Gym gaps, against 3 of
+  25 other gaps"); a reason that only one question offers is never reported. Every line carries its
+  counts and **the days it came from** ("See the days", each opens that day). It says nothing under 21
+  logged days (and says how many more it wants), tells one story per pair of subjects, at most three, and
+  never a cause. Same days in, same facts out. Checked against simulated lives: planted links are found;
+  with nothing linked (independent, or with streaks) about 1 life in 150 is told anything.
 - **First run** (`src/components/welcome.tsx`, `src/lib/templates.ts`): a new account isn't seeded
   with anyone's setup; it picks from nine starting points, each already saying what counts as a slip.
   Accounts that already have logged days keep working as before.
@@ -273,7 +292,14 @@ audit reads `globals.css`, so it can't drift from what ships).
 
 ## Shop: a monthly pocket for the things you actually need
 
-The fifth tab. Think of the **pocket** (your budget for the month) as a suitcase of a fixed size: needs
+An optional tab, **off until you switch it on** (Setup -> Pages -> Shop), so a newcomer sees only the
+focused app. The switch is part of your setup (one flag in your saved spec, no new table or column), so it
+follows you across devices, and it saves on its own, at once. Switching it off only hides the tab and keeps
+everything you saved. A small cookie keeps a copy so the loading picture of the bottom bar already has the
+right tabs; with it off, the Shop code isn't even downloaded. Shared into the app from a shop while it is
+off, you land on Today with a note to switch it on and share again.
+
+The tab itself: think of the **pocket** (your budget for the month) as a suitcase of a fixed size: needs
 are packed first, wants fill what's left, and a dashed line shows where it's full. Everything below the
 line waits for next month.
 
