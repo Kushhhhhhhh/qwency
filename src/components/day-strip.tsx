@@ -1,7 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef } from "react";
-import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
+import { awayOf, dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { addDays, weekdayIndex, WEEKDAYS, type Entries } from "@/lib/tracker";
 
 const DAYS = 21;
@@ -33,6 +33,7 @@ export function DayStrip({
       {days.map((d) => {
         const on = d === selected;
         const active = hasActivity(entries[d], spec);
+        const away = awayOf(entries[d]) !== null;
         // each day against the plan it had, so a later change never rewrites it
         const then = specAt(spec, d);
         const complete = active && dayDone(entries[d], d, then) >= dayTotal(then, d);
@@ -41,7 +42,7 @@ export function DayStrip({
             key={d}
             type="button"
             onClick={() => onSelect(d)}
-            aria-label={d}
+            aria-label={away ? `${d}, away` : d}
             aria-current={on ? "date" : undefined}
             className={`flex w-12 shrink-0 flex-col items-center gap-1 rounded-2xl border py-2 transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-95 ${
               on
@@ -55,7 +56,15 @@ export function DayStrip({
             <span className="text-base font-semibold tabular-nums">{Number(d.slice(8))}</span>
             <span
               className={`size-1.5 rounded-full transition-colors ${
-                complete ? "bg-good" : active ? (on ? "bg-cream/70" : "bg-ink/40") : "bg-transparent"
+                away
+                  ? `border ${on ? "border-cream/80" : "border-ink/50"} bg-transparent` // a hollow dot: not judged
+                  : complete
+                    ? "bg-good"
+                    : active
+                      ? on
+                        ? "bg-cream/70"
+                        : "bg-ink/40"
+                      : "bg-transparent"
               }`}
             />
           </button>

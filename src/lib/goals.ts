@@ -1,6 +1,6 @@
 import { REVIEW_NOTE_MAX, addMonths, monthDates, type Entries } from "./tracker";
 import { buildMirrorOver } from "./mirror";
-import { formatAmount, isExpected, specAt, startedOn, type FieldSpec, type HabitSpec } from "./spec";
+import { awayOf, formatAmount, isExpected, specAt, startedOn, type FieldSpec, type HabitSpec } from "./spec";
 
 // Monthly = direction. A month can hold a few goals, and every one is *measured from what you
 // already log*, never ticked by hand, so the mirror stays honest about them:
@@ -108,12 +108,12 @@ export const totalChoices = (spec: HabitSpec) => numericFields(spec).map((f) => 
 
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-/** The days a section is planned in this month, each by the rules it had that day. */
-function plannedDates(spec: HabitSpec, target: string, dates: string[], started: string) {
-  if (target === DAY_TARGET) return dates.filter((d) => d >= started);
+/** The days a section is planned in this month, each by the rules it had that day. A day marked away is not a planned day. */
+function plannedDates(spec: HabitSpec, entries: Entries, target: string, dates: string[], started: string) {
+  if (target === DAY_TARGET) return dates.filter((d) => d >= started && !awayOf(entries[d]));
   return dates.filter((d) => {
     const s = specAt(spec, d).sections.find((x) => x.id === target);
-    return !!s && isExpected(s, d, started);
+    return !!s && isExpected(s, d, started) && !awayOf(entries[d]);
   });
 }
 
@@ -138,7 +138,7 @@ export function goalViews(spec: HabitSpec, entries: Entries, month: string, toda
       const section = spec.sections.find((s) => s.id === g.target);
       if (!row || (g.target !== DAY_TARGET && !section)) continue;
 
-      const planned = plannedDates(spec, g.target, dates, started);
+      const planned = plannedDates(spec, entries, g.target, dates, started);
       const elapsed = planned.filter((d) => d < today).length;
       const ahead = planned.filter((d) => d > today).length;
       const todayOpen = row.cells.find((c) => c.date === today)?.state === "open";
@@ -231,7 +231,7 @@ export function suggestGoals(spec: HabitSpec, entries: Entries, month: string, t
   const out: { label: string; goal: GoalInput }[] = [];
 
   const daysFor = (target: string, title: string) => {
-    const planned = plannedDates(spec, target, dates, started).length;
+    const planned = plannedDates(spec, entries, target, dates, started).length;
     if (planned < 4) return;
     const days = Math.max(1, Math.round(planned * 0.8));
     out.push({ label: `${title} · ${days} days`, goal: { kind: "days", target, days } });

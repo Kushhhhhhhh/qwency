@@ -1,16 +1,16 @@
-import { DATE_RE } from "./tracker";
-
-// Which days' "fill in yesterday" lines you've waved away. Kept in a small cookie rather than in
+// Which days' "fill in yesterday" lines you've waved away, and which weeks' "last week" check-ins
+// (written "w" + that week's Monday, so a week and a day can never be mistaken for each other). Kept in a small cookie rather than in
 // localStorage so the server can leave the line out in the first place: a line that's drawn and then
 // removed once the page wakes up would push everything below it up the screen.
 
 export const DISMISS_COOKIE = "qc";
 const KEEP = 14;
+const TOKEN_RE = /^w?\d{4}-\d{2}-\d{2}$/;
 
 export function parseDismissed(raw: string | undefined | null): string[] {
   return (raw ?? "")
     .split("_")
-    .filter((d) => DATE_RE.test(d))
+    .filter((d) => TOKEN_RE.test(d))
     .slice(-KEEP);
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
+import { AWAY_REASONS, awayLabel, awayOf, dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
 import { buildMirrorOver, type Cell, type CellState, type RowMirror } from "@/lib/mirror";
 import { cleanRun, findLinks, trendLine, weekdayShape, type Link, type Trend } from "@/lib/insights";
 import type { MonthPlan } from "@/lib/goals";
@@ -21,6 +21,9 @@ import {
 import { MonthCard, MonthReview, worthReviewing } from "./month";
 
 const WEEKS = 10;
+// an away day in the heatmap: diagonal lines over the faintest fill, so it reads as "not judged", not "nothing"
+const HATCH =
+  "repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-ink) 40%, transparent) 0 2px, transparent 2px 5px), color-mix(in oklab, var(--color-ink) 6%, transparent)";
 const MOOD_VAR: Record<Mood, string> = {
   good: "var(--color-good)",
   meh: "var(--color-meh)",
@@ -114,7 +117,7 @@ export function Overview(p: Props) {
         ]}
       />
       <Noticing links={links} />
-      {mirror.totals.planned > 0 && <Legend />}
+      {(mirror.totals.planned > 0 || mirror.away.length > 0) && <Legend withAway={mirror.away.length > 0} />}
       {mirror.rows.map((r) => (
         <Row key={r.id} row={r} compact={dates.length > 7} onPick={p.onPick} onSetup={p.onSetup} />
       ))}
@@ -168,7 +171,9 @@ function Hero({
       {startedOn === null ? (
         <p className="mt-3 text-base font-semibold leading-snug">Nothing logged yet. Tap in today and the mirror starts here.</p>
       ) : totals.planned === 0 ? (
-        <p className="mt-3 text-base font-semibold leading-snug">Nothing has come due in this window yet.</p>
+        <p className="mt-3 text-base font-semibold leading-snug">
+          {mirror.away.length > 0 ? "Everything in this window was an away day, so there is nothing to count." : "Nothing has come due in this window yet."}
+        </p>
       ) : (
         <>
           <p className="mt-3 text-lg font-semibold leading-snug">
@@ -199,6 +204,12 @@ function Hero({
               caption={totals.gaps === 0 ? "nothing to explain" : "explained"}
             />
           </div>
+
+          {mirror.away.length > 0 && (
+            <p className="mt-3 text-sm text-ink/85">
+              Away: {mirror.away.length} {mirror.away.length === 1 ? "day" : "days"} ({awayWords(mirror.away)}). Not counted.
+            </p>
+          )}
 
           {reasons.length > 0 && (
             <div className="mt-4">
@@ -265,6 +276,7 @@ const CELL: Record<CellState, string> = {
   open: "border border-ink/25 bg-surface text-soft",
   off: "bg-ink/5 text-ink/25",
   extra: "bg-ink/40 text-cream",
+  away: "away-hatch bg-lilac/40 text-ink",
 };
 const CELL_WORD: Record<CellState, string> = {
   done: "done",
@@ -273,14 +285,24 @@ const CELL_WORD: Record<CellState, string> = {
   open: "still open today",
   off: "not planned",
   extra: "done, though not planned",
+  away: "away",
 };
 
-function Legend() {
+/** "2 sick, 1 travelling": the away days in a window, by why. */
+function awayWords(days: { reason: (typeof AWAY_REASONS)[number]["id"] }[]) {
+  return AWAY_REASONS.map((r) => ({ r, n: days.filter((d) => d.reason === r.id).length }))
+    .filter((x) => x.n > 0)
+    .map((x) => `${x.n} ${awayLabel(x.r.id).toLowerCase()}`)
+    .join(", ");
+}
+
+function Legend({ withAway }: { withAway: boolean }) {
   const items: [CellState, string][] = [
     ["done", "Done"],
     ["slipped", "Slipped"],
     ["blank", "Not logged"],
     ["off", "Not planned"],
+    ...(withAway ? [["away", "Away"] as [CellState, string]] : []),
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-soft">
@@ -422,11 +444,17 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
   const start = addDays(thisMonday, -(WEEKS - 1) * 7);
   const days = Array.from({ length: WEEKS * 7 }, (_, i) => addDays(start, i));
 
+  const isAway = (d: string) => d <= today && awayOf(entries[d]) !== null;
+  const anyAway = days.some(isAway);
+
   function bg(d: string) {
     const e = entries[d];
     if (mode === "mood") {
       if (e?.mood) return MOOD_VAR[e.mood];
+      if (isAway(d)) return HATCH;
       if (hasActivity(e, spec)) return "color-mix(in oklab, var(--color-ink) 22%, transparent)";
+    } else if (isAway(d)) {
+      return HATCH;
     } else if (hasActivity(e, spec)) {
       // measured against what was planned that day, so a light weekend isn't a poor one
       const then = specAt(spec, d);
@@ -481,8 +509,8 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
                       type="button"
                       disabled={future}
                       onClick={() => onPick(d)}
-                      aria-label={`${shortDate(d)}: ${done} of ${planned} planned done`}
-                      title={future ? "" : `${shortDate(d)} · ${done}/${planned} planned done`}
+                      aria-label={isAway(d) ? `${shortDate(d)}: away` : `${shortDate(d)}: ${done} of ${planned} planned done`}
+                      title={future ? "" : isAway(d) ? `${shortDate(d)} · away` : `${shortDate(d)} · ${done}/${planned} planned done`}
                       style={{ background: bg(d), animationDelay: popped ? undefined : `${week * 16}ms` }}
                       className={`size-4.25 shrink-0 rounded-[5px] transition-transform ${future ? "invisible" : "hover:scale-110"} ${
                         popped ? "cell-in" : "rise"
@@ -494,7 +522,9 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
             ))}
           </div>
         </div>
-        <p className="mt-3 text-xs text-soft">A stronger colour = more of what you planned that day. Tap a day to open it.</p>
+        <p className="mt-3 text-xs text-soft">
+          A stronger colour = more of what you planned that day.{anyAway ? " Hatched = an away day." : ""} Tap a day to open it.
+        </p>
       </div>
     </section>
   );

@@ -149,7 +149,25 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   on every key, so you can clear one and type a new number (`settleWhole` in `src/lib/spec.ts`). A goal
   above the max lifts the max with it.
 - **The streak is "days without a gap"** (`cleanRun`): everything planned done and nothing slipped,
-  the day verdict included. Opening the app on a day of skipped sections doesn't extend it.
+  the day verdict included. Opening the app on a day of skipped sections doesn't extend it. Days marked
+  away are stepped over: they neither extend it nor break it.
+- **Away days** (`AWAY_KEY` in `src/lib/spec.ts`, `src/components/away.tsx`). A day can be marked away
+  (Sick, Travelling, Resting, Something else) from the quiet "Not a normal day? Mark it away" line at the
+  end of Today, from the "Away?" / "Away today?" links in the nudges, or from the Monday check-in. An away
+  day isn't judged: every square on it is "away" (or "done, though not planned" if you logged it anyway),
+  so it is never a gap, never "open", never asked about, and the day verdict doesn't ask why it slipped.
+  Patterns says so ("Away: 2 days (1 sick, 1 travelling). Not counted.") and hatches those squares; month
+  goals don't count them as planned days. It is one reserved key in the day's existing data (no new
+  column), so it saves offline through the outbox like everything else, and it can be undone.
+- **The Monday check-in** (`src/lib/checkin.ts`, `src/components/checkin.tsx`). Patterns says "9 gaps have
+  no reason yet", and finding each square is the hard part. On Monday, Tuesday and Wednesday, Today offers
+  last week (Monday to Sunday): what was planned and done, and how many gaps have no reason. "Add reasons"
+  walks through them, one question each, with the reason chips you already use, grouped so you are asked as
+  little as possible (a day where nothing was logged is one question, not five) and with "or the whole day
+  was away" as a way out. Each answer is saved exactly where Today would save it, so Patterns can't tell
+  the difference. Closing it or finishing is remembered per week (the same small cookie as the catch-up,
+  written "w" + that week's Monday). A day with no verdict is explained by whatever reasons its unlogged
+  sections were given, so Patterns and the check-in always agree on what is still unexplained.
 - **Patterns says more, carefully** (all in `src/lib/insights.ts`, all derived, nothing new to log):
   how this window compares with the one before (skipped when the earlier window began before you
   did), the weekday that slips clearly more than the rest (needs about a month), and "worth

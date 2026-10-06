@@ -666,7 +666,7 @@ function ItemCard({
             <Icon size={22} strokeWidth={1.8} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="line-clamp-2 break-words text-[15px] font-semibold leading-tight">{item.title}</span>
+            <span className="line-clamp-2 wrap-break-word text-[15px] font-semibold leading-tight">{item.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-soft">
               {item.shelf === "month" && (
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.kind === "need" ? "bg-ink text-cream" : "border border-ink/40 text-ink"}`}>{item.kind === "need" ? "Need" : "Want"}</span>

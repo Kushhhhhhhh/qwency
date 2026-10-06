@@ -4,6 +4,8 @@ import { type ReactNode } from "react";
 import { Check, Frown, Meh, Smile } from "lucide-react";
 import { iconFor } from "@/lib/icons";
 import { MOODS, NOTE_MAX, type Entry, type Mood } from "@/lib/tracker";
+import type { AwayReason } from "@/lib/spec";
+import { AwayLink } from "./away";
 import { NoteField } from "./note-field";
 import { WhySelector } from "./why-selector";
 
@@ -64,14 +66,19 @@ const MOOD_ICON_COLOR: Record<Mood, string> = { good: "text-good", meh: "text-me
 /** Overall verdict + the WHY flow (only shows on rough days) + the day-level note. */
 export function DayVerdict({
   entry,
+  away,
   onMood,
   onTags,
   onNote,
+  onAway,
 }: {
   entry: Entry;
+  /** why this day is away, if it is (the verdict isn't judged then, so it doesn't ask why it slipped) */
+  away: AwayReason | null;
   onMood: (m: Mood) => void;
   onTags: (tags: string[]) => void;
   onNote: (note: string) => Promise<boolean>;
+  onAway: (reason: AwayReason | null) => void;
 }) {
   return (
     <div className="pt-4">
@@ -98,7 +105,7 @@ export function DayVerdict({
         })}
       </div>
 
-      <WhySelector tags={entry.tags} open={entry.mood === "bad"} onChange={onTags} />
+      <WhySelector tags={entry.tags} open={entry.mood === "bad" && !away} onChange={onTags} />
 
       <NoteField
         value={entry.note}
@@ -108,6 +115,8 @@ export function DayVerdict({
         openLabel="Add a note"
         filledLabel="Note for this day"
       />
+
+      {!away && <AwayLink onPick={onAway} />}
     </div>
   );
 }

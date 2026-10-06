@@ -1,5 +1,6 @@
 import { addDays, WHY_TAGS, type Entries, type Entry } from "./tracker";
 import {
+  awayOf,
   breakdownOf,
   formatAmount,
   isCustom,
@@ -16,6 +17,7 @@ import {
   startedOn,
   whyKey,
   EVERY_DAY,
+  type AwayReason,
   type Data,
   type FieldSpec,
   type HabitSpec,
@@ -33,9 +35,10 @@ import {
 //
 // "Planned" comes from each section's schedule. Days before you started, before a section
 // existed, or on days a section isn't scheduled are never counted, and today's unanswered
-// sections are "open", not missed — the day isn't over.
+// sections are "open", not missed — the day isn't over. A day marked away (sick, travelling,
+// resting) isn't judged at all: everything on it is "away", or "extra" if you logged it anyway.
 
-export type CellState = "done" | "slipped" | "blank" | "open" | "off" | "extra";
+export type CellState = "done" | "slipped" | "blank" | "open" | "off" | "extra" | "away";
 export type Cell = { date: string; state: CellState; reasons: string[]; note: string };
 export type ReasonCount = { label: string; n: number };
 
@@ -69,6 +72,8 @@ export type Mirror = {
   totals: { planned: number; done: number; slipped: number; blank: number; gaps: number; explained: number; unexplained: number };
   reasons: ReasonCount[];
   rows: RowMirror[];
+  /** the days in this window marked away (after you started), oldest first */
+  away: { date: string; reason: AwayReason }[];
 };
 
 const whyLabel = (id: string) => WHY_TAGS.find((t) => t.id === id)?.label ?? id;
@@ -106,6 +111,9 @@ function sectionCell(spec: HabitSpec, s: SectionSpec, date: string, entry: Entry
   const note = typeof noteRaw === "string" ? noteRaw.trim() : "";
   const answered = Boolean(entry && sectionDone(entry, s));
 
+  // an away day isn't judged: what was planned simply isn't counted, what was logged still shows
+  if (date >= started && awayOf(entry)) return { date, state: answered ? "extra" : "away", reasons: [], note };
+
   if (!isExpected(s, date, started)) return { date, state: answered ? "extra" : "off", reasons: [], note };
 
   if (!answered || !entry) {
@@ -129,11 +137,18 @@ function sectionCell(spec: HabitSpec, s: SectionSpec, date: string, entry: Entry
   return { date, state: slipped ? "slipped" : pending ? "open" : "done", reasons: dedupe(reasons), note };
 }
 
+/** Why sections weren't logged that day ("Forgot"): a day with no verdict is explained by the same reasons. */
+const missedReasons = (entry: Entry | undefined) =>
+  Object.entries(entry?.data ?? {})
+    .filter(([k]) => k.endsWith("_missed"))
+    .flatMap(([, v]) => strings(v).map(whyLabel));
+
 /** "The day overall" is expected every day: Good/Okay are reality, Rough is a slip, empty is a blank. */
 function dayCell(date: string, entry: Entry | undefined, today: string, started: string): Cell {
   const note = entry?.note.trim() ?? "";
   if (date < started) return { date, state: "off", reasons: [], note };
-  if (!entry || entry.mood === null) return { date, state: date === today ? "open" : "blank", reasons: [], note };
+  if (awayOf(entry)) return { date, state: "away", reasons: [], note }; // the verdict isn't judged on an away day
+  if (!entry || entry.mood === null) return { date, state: date === today ? "open" : "blank", reasons: date === today ? [] : dedupe(missedReasons(entry)), note };
   if (entry.mood === "bad") return { date, state: "slipped", reasons: dedupe(entry.tags.map(whyLabel)), note };
   return { date, state: "done", reasons: [], note };
 }
@@ -273,5 +288,9 @@ export function buildMirrorOver(spec: HabitSpec, entries: Entries, today: string
     },
     reasons: [...tally.values()].sort((a, b) => b.n - a.n),
     rows,
+    away: dates.flatMap((d) => {
+      const reason = awayOf(entries[d]);
+      return reason && d >= from && d <= today ? [{ date: d, reason }] : [];
+    }),
   };
 }

@@ -262,6 +262,12 @@ html[data-theme="dark"] .tile {
 .tile-meh { background: var(--color-tile-2); }
 .tile-good { background: var(--color-tile-3); }
 
+/* An away day (sick, travelling, resting) in Patterns: diagonal lines over a faint fill, so it reads as
+   "not judged" and can't be taken for a done or a not-planned square. Light enough for the letter on it. */
+.away-hatch {
+  background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-ink) 18%, transparent) 0 2px, transparent 2px 5px);
+}
+
 /* ---- chips ---- */
 /* in the components layer so utilities like bg-ink win over these defaults */
 @layer components {

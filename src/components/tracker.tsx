@@ -5,6 +5,9 @@ import dynamic from "next/dynamic";
 import { loadSnapshot, patchData, removeItem, saveBudget, saveFocus, saveItem, saveNote, savePlan, saveSpec, saveTags, setMood } from "@/app/actions";
 import type { MonthPlan } from "@/lib/goals";
 import {
+  AWAY_KEY,
+  awayLabel,
+  awayOf,
   breakdownOf,
   customId,
   CUSTOM_PICK_MAX,
@@ -23,10 +26,12 @@ import {
   startedOn,
   whyKey,
   whyPromptKey,
+  type AwayReason,
   type Data,
   type FieldSpec,
   type HabitSpec,
 } from "@/lib/spec";
+import { reasonWrite, type Step } from "@/lib/checkin";
 import {
   EMPTY_ENTRY,
   localKey,
@@ -43,6 +48,7 @@ import { whenIdle } from "@/lib/idle";
 import { useStable } from "@/lib/use-stable";
 import { RECENT_DAYS, type Snapshot } from "@/lib/snapshot";
 import { mergeEntries, rollDay, same, sameEntry } from "@/lib/sync";
+import { AwayBadge, AwayBanner } from "./away";
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
 import { Nudges } from "./nudge";
@@ -577,6 +583,40 @@ function TrackerView({
     return persistQuiet({ kind: "data", date, set, remove });
   }
 
+  /**
+   * Change a few answers on any day (not just the one on screen), exactly as a tap on Today would: tidied the
+   * same way, shown at once, and only what changed is sent. The Monday check-in and "away" both write this way.
+   */
+  function writeKeys(date: string, set: Data, remove: string[], okText?: string) {
+    const cur = entriesRef.current[date] ?? EMPTY_ENTRY;
+    const data: Data = { ...cur.data, ...set };
+    for (const k of remove) delete data[k];
+    const clean = pruneHidden(specAt(spec, date), data);
+    const diff = diffData(cur.data, clean);
+    if (Object.keys(diff.set).length === 0 && diff.remove.length === 0) return;
+    mutate((prev) => ({ ...prev, [date]: { ...(prev[date] ?? EMPTY_ENTRY), data: clean } }));
+    const op: Op = { kind: "data", date, set: diff.set, remove: diff.remove };
+    if (okText) void persist(op, okText);
+    else void persistQuiet(op);
+  }
+
+  /** Mark a day away (sick, travelling, resting), or with null, a normal day again. */
+  function markAway(date: string, reason: AwayReason | null) {
+    haptic(10);
+    if (reason) writeKeys(date, { [AWAY_KEY]: reason }, [], `Away: ${awayLabel(reason).toLowerCase()}. Nothing counts that day.`);
+    else writeKeys(date, {}, [AWAY_KEY], "Back to a normal day");
+  }
+
+  /** Save the reasons given for one question of the Monday check-in, where Today would have saved them. */
+  function writeReason(step: Step, tags: string[]) {
+    const w = reasonWrite(step, tags);
+    haptic(6);
+    if ("tags" in w) {
+      patchDay(step.date, { tags: w.tags });
+      void persistQuiet({ kind: "tags", date: step.date, tags: w.tags });
+    } else writeKeys(step.date, w.set, w.remove);
+  }
+
   async function saveSetup(next: HabitSpec): Promise<boolean> {
     // not remembered for re-sending: Setup keeps your draft on a failure, and the Save pill says so
     let saved: HabitSpec | undefined;
@@ -665,6 +705,8 @@ function TrackerView({
   const pickDay = (d: string) => startTransition(() => setSelected(d));
 
   const entry = selected ? (entries[selected] ?? EMPTY_ENTRY) : EMPTY_ENTRY;
+  // an away day isn't judged: no "missed", no "why did this slip", and no progress to add up
+  const away = awayOf(entry);
   const started = today ? (startedOn(entries, spec) ?? today) : "";
   // the selected day, as the rules stood then (schedule, what counts as a slip, goals, targets)
   const view = selected ? specAt(spec, selected) : spec;
@@ -703,26 +745,35 @@ function TrackerView({
           </p>
         </div>
         <ThemeToggle />
-        {tab === "today" && selected && (
-          <ProgressRing value={dayDone(entry, selected, view)} total={dayTotal(view, selected)} />
-        )}
+        {tab === "today" && selected && (away ? <AwayBadge reason={away} /> : <ProgressRing value={dayDone(entry, selected, view)} total={dayTotal(view, selected)} />)}
         <UserMenu size={48} />
       </header>
 
       {tab === "today" ? (
         <div className="flex flex-col gap-4">
           <DayStrip entries={entries} today={today} selected={selected} spec={spec} onSelect={pickDay} />
-          <Nudges spec={spec} entries={entries} today={today} selected={selected} hour={hour} dismissed={dismissed} onFill={pickDay} />
+          {away && <AwayBanner key={`${selected}-${away}`} reason={away} isToday={selected === today} onPick={(r) => markAway(selected, r)} />}
+          <Nudges
+            spec={spec}
+            entries={entries}
+            today={today}
+            selected={selected}
+            hour={hour}
+            dismissed={dismissed}
+            onFill={pickDay}
+            onAway={markAway}
+            onReason={writeReason}
+          />
 
           {view.sections.map((s, i) => {
-            const scheduled = isScheduled(s, selected);
+            const scheduled = isScheduled(s, selected) && !away;
             const answered = sectionDone(entry, s);
             // a past day, planned, and nothing logged: worth a quiet "want to say why?" — never today,
             // since the day isn't over, and never before you started or before the section existed
-            const missed = !answered && selected < today && isExpected(s, selected, started);
+            const missed = !answered && selected < today && isExpected(s, selected, started) && !away;
             const missTags = (entry.data[sectionMissKey(s.id)] as string[] | undefined) ?? [];
             // one "why did this slip?" per section, and never for a floor the day hasn't had time to reach
-            const askKey = whyPromptKey(view, s, entry.data, selected < today);
+            const askKey = away ? undefined : whyPromptKey(view, s, entry.data, selected < today);
             return (
               <SectionCard
                 // remount per day so local state (note text, amount input) resets, and again when
@@ -730,7 +781,7 @@ function TrackerView({
                 key={`${selected}-${dayRev}-${s.id}`}
                 icon={s.icon}
                 title={s.title}
-                hint={scheduled ? s.hint : "Not planned today · log it if you did it"}
+                hint={scheduled ? s.hint : away ? "Away · log it if you did it" : "Not planned today · log it if you did it"}
                 done={answered}
                 muted={!scheduled && !answered}
                 index={i}
@@ -777,7 +828,7 @@ function TrackerView({
             index={spec.sections.length}
             variant={TILE_VARIANTS[spec.sections.length % TILE_VARIANTS.length]}
           >
-            <DayVerdict entry={entry} onMood={pickMood} onTags={pickTags} onNote={pickNote} />
+            <DayVerdict entry={entry} away={away} onMood={pickMood} onTags={pickTags} onNote={pickNote} onAway={(r) => markAway(selected, r)} />
           </SectionCard>
         </div>
       ) : tab === "patterns" ? (

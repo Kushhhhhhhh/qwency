@@ -61,6 +61,7 @@ export const openToday = (spec: HabitSpec, entries: Entries, today: string): str
  * Days in a row with nothing missed: everything planned was done and nothing slipped, "the day
  * overall" included. Not "days you opened the app": a day of skipped sections doesn't extend
  * it. Today only counts once it's complete; while it's still open the run is judged to yesterday.
+ * Days marked away are stepped over: they don't count towards the run and don't break it.
  * Pass `mirror` (built over the last `days` days) when the caller already has one, to not build it twice.
  */
 export function cleanRun(spec: HabitSpec, entries: Entries, today: string, days = 90, mirror?: Mirror): { days: number; brokeOn: string | null } {
@@ -75,6 +76,7 @@ export function cleanRun(spec: HabitSpec, entries: Entries, today: string, days 
   let run = 0;
   for (; i >= 0; i--) {
     if (dates[i] < started) break;
+    if (m.rows.some((r) => r.cells[i].state === "away")) continue; // an away day neither extends the run nor breaks it
     if (at(i).some(isGap)) return { days: run, brokeOn: dates[i] };
     run++;
   }

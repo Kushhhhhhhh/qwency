@@ -273,6 +273,27 @@ export const SECTION_NOTE_MAX = 500;
 // section gets an answer, since it no longer describes anything.
 export const sectionMissKey = (sectionId: string) => `${sectionId}_missed`;
 
+// ---- away days ----
+//
+// A day marked "away" (sick, travelling, resting) isn't judged: nothing planned counts as a gap, it never
+// breaks a run, and anything you do log still shows. One companion key in the same day blob, holding why.
+// Reserved: no question can take this key (see sanitizeSpec).
+export const AWAY_KEY = "day_away";
+export const AWAY_REASONS = [
+  { id: "sick", label: "Sick" },
+  { id: "travel", label: "Travelling" },
+  { id: "rest", label: "Resting" },
+  { id: "other", label: "Something else" },
+] as const;
+export type AwayReason = (typeof AWAY_REASONS)[number]["id"];
+export const isAwayReason = (v: unknown): v is AwayReason => typeof v === "string" && AWAY_REASONS.some((r) => r.id === v);
+export const awayLabel = (reason: AwayReason) => AWAY_REASONS.find((r) => r.id === reason)!.label;
+/** Why this day is away, or null for a normal day. */
+export function awayOf(entry: Entry | undefined): AwayReason | null {
+  const v = entry?.data[AWAY_KEY];
+  return isAwayReason(v) ? v : null;
+}
+
 /** The tone of whatever a "single" field is currently set to, if any. */
 export function toneOfValue(field: FieldSpec, value: Data[string] | undefined): Tone | undefined {
   if (field.kind !== "single" || typeof value !== "string") return undefined;
@@ -485,6 +506,8 @@ export function pruneHidden(spec: HabitSpec, data: Data): Data {
     const answered = s.fields.some((f) => hasValue(out[f.key]));
     if (!answered && data[mk] !== undefined) out[mk] = data[mk];
   }
+  // an away day stays away whatever else is cleared
+  if (isAwayReason(data[AWAY_KEY])) out[AWAY_KEY] = data[AWAY_KEY];
   return out;
 }
 
@@ -626,6 +649,7 @@ export function sanitizeData(input: unknown): Data {
   let count = 0;
   for (const key of Object.keys(src)) {
     if (count >= 120 || !DATA_KEY_RE.test(key)) continue;
+    if (key === AWAY_KEY && !isAwayReason(src[key])) continue;
     const v = src[key];
     if (typeof v === "string") {
       // any *_note key is free text (bumped from 60 to SECTION_NOTE_MAX); other strings
@@ -844,7 +868,7 @@ function sanitizeField(input: unknown, usedKeys: Set<string>): FieldSpec | undef
 export function sanitizeSpec(input: unknown): HabitSpec {
   const src = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const usedSectionIds = new Set<string>();
-  const usedKeys = new Set<string>();
+  const usedKeys = new Set<string>([AWAY_KEY]);
   const sections: SectionSpec[] = [];
 
   const rawSections = Array.isArray(src.sections) ? src.sections.slice(0, MAX_SECTIONS) : [];
