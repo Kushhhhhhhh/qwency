@@ -36,6 +36,7 @@ import {
   EMPTY_ENTRY,
   localKey,
   prettyDate,
+  shortDate,
   type Entries,
   type Entry,
   type Mood,
@@ -45,6 +46,7 @@ import { SHOP_COOKIE } from "@/lib/theme";
 import { emptyBox, isEmpty, overlayEntries, overlayFocus, overlayPlans, pendingOps, queue, settle, waitingKeys, type Box, type Op } from "@/lib/outbox";
 import { readBox, writeBox } from "@/lib/outbox-store";
 import { currencyOf } from "@/lib/shop";
+import { sectionComplete, sectionMissed, sectionSummary } from "@/lib/today";
 import { whenIdle } from "@/lib/idle";
 import { useStable } from "@/lib/use-stable";
 import { RECENT_DAYS, type Snapshot } from "@/lib/snapshot";
@@ -52,10 +54,11 @@ import { mergeEntries, rollDay, same, sameEntry } from "@/lib/sync";
 import { AwayBadge, AwayBanner } from "./away";
 import { DayStrip } from "./day-strip";
 import { FieldView } from "./field-view";
+import { FirstRun } from "./first-run";
 import { Nudges } from "./nudge";
 import { MissedNudge } from "./missed-nudge";
-import { NoteField } from "./note-field";
 import { DayVerdict, SectionCard, TILE_VARIANTS } from "./section-card";
+import type { Kept } from "./setup";
 import { Nav, TabSkeleton, TodayShell, type Tab } from "./shell";
 import { ProgressRing } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
@@ -254,6 +257,8 @@ function TrackerView({
   const [draft, setDraft] = useState(share);
   // a Patterns row can send you to its section in Setup, already open
   const [setupFocus, setSetupFocus] = useState<string | null>(null);
+  // an unsaved Setup draft, kept while you look at another tab (Setup is only built while it is on screen)
+  const [keptSetup, setKeptSetup] = useState<Kept | null>(null);
   const [pulse, setPulse] = useState({ date: "", n: 0 });
   const toast = useRef<ToastApi>(null);
   // Debounced note saves fire later than the render that created them, so they read the
@@ -719,7 +724,9 @@ function TrackerView({
   const entry = selected ? (entries[selected] ?? EMPTY_ENTRY) : EMPTY_ENTRY;
   // an away day isn't judged: no "missed", no "why did this slip", and no progress to add up
   const away = awayOf(entry);
-  const started = today ? (startedOn(entries, spec) ?? today) : "";
+  // nothing logged anywhere yet: a brand-new account, which gets a word about how Today works
+  const firstDay = today ? startedOn(entries, spec) : null;
+  const started = today ? (firstDay ?? today) : "";
   // the selected day, as the rules stood then (schedule, what counts as a slip, goals, targets)
   const view = selected ? specAt(spec, selected) : spec;
   // the symbol in front of amounts in Shop: the one from your own Spending question
@@ -752,7 +759,13 @@ function TrackerView({
                   : tab === "setup"
                     ? "Make it yours"
                     : selected
-                      ? prettyDate(selected)
+                      ? (
+                          // the whole date where it fits, the short one on the narrowest phones (so it isn't cut off)
+                          <>
+                            <span className="min-[360px]:hidden">{shortDate(selected)}</span>
+                            <span className="hidden min-[360px]:inline">{prettyDate(selected)}</span>
+                          </>
+                        )
                       : "\u00a0"}
           </p>
         </div>
@@ -777,15 +790,31 @@ function TrackerView({
             onReason={writeReason}
           />
 
+          {firstDay === null && selected === today && <FirstRun />}
+
+          {/* the lightest way to log a day is first: three faces */}
+          <DayVerdict
+            // remount per day, and again when another device changed this day, so the note box follows `entry`
+            key={`${selected}-${dayRev}-day`}
+            entry={entry}
+            away={away}
+            isToday={selected === today}
+            onMood={pickMood}
+            onTags={pickTags}
+            onNote={pickNote}
+            onAway={(r) => markAway(selected, r)}
+          />
+
           {view.sections.map((s, i) => {
+            const dayOver = selected < today;
             const scheduled = isScheduled(s, selected) && !away;
             const answered = sectionDone(entry, s);
             // a past day, planned, and nothing logged: worth a quiet "want to say why?" — never today,
             // since the day isn't over, and never before you started or before the section existed
-            const missed = !answered && selected < today && isExpected(s, selected, started) && !away;
+            const missed = !answered && dayOver && isExpected(s, selected, started) && !away;
             const missTags = (entry.data[sectionMissKey(s.id)] as string[] | undefined) ?? [];
-            // one "why did this slip?" per section, and never for a floor the day hasn't had time to reach
-            const askKey = away ? undefined : whyPromptKey(view, s, entry.data, selected < today);
+            // one "what got in the way?" per section, and never for a floor the day hasn't had time to reach
+            const askKey = away ? undefined : whyPromptKey(view, s, entry.data, dayOver);
             return (
               <SectionCard
                 // remount per day so local state (note text, amount input) resets, and again when
@@ -795,9 +824,18 @@ function TrackerView({
                 title={s.title}
                 hint={scheduled ? s.hint : away ? "Away · log it if you did it" : "Not planned today · log it if you did it"}
                 done={answered}
+                complete={sectionComplete(s, entry.data, dayOver)}
+                summary={sectionSummary(s, entry.data)}
+                missed={sectionMissed(s, entry.data, dayOver)}
                 muted={!scheduled && !answered}
-                index={i}
+                index={i + 1}
                 variant={TILE_VARIANTS[i % TILE_VARIANTS.length]}
+                note={{
+                  value: (entry.data[sectionNoteKey(s.id)] as string) ?? "",
+                  max: SECTION_NOTE_MAX,
+                  onSave: (v) => saveSectionNote(selected, s.id, v),
+                  placeholder: missed ? "What happened? Just for you." : `Anything worth remembering about ${s.title.toLowerCase()}.`,
+                }}
               >
                 {s.fields.map((f) => (
                   <FieldView
@@ -814,34 +852,9 @@ function TrackerView({
                 {missed && (
                   <MissedNudge tags={missTags} onChange={(tags) => setField(sectionMissKey(s.id), tags.length ? tags : undefined)} />
                 )}
-                <NoteField
-                  value={(entry.data[sectionNoteKey(s.id)] as string) ?? ""}
-                  max={SECTION_NOTE_MAX}
-                  onSave={(v) => saveSectionNote(selected, s.id, v)}
-                  placeholder={
-                    missed ? "What happened? Just for you." : `Anything worth remembering about ${s.title.toLowerCase()}.`
-                  }
-                  openLabel="Note"
-                  closeLabel="Hide note"
-                  filledLabel="Note"
-                />
               </SectionCard>
             );
           })}
-
-          <SectionCard
-            // remount per day, same as the sections above — otherwise the note's local text
-            // state sticks from whichever day was open first instead of following `entry`
-            key={`${selected}-${dayRev}-day`}
-            icon="sun"
-            title="The day overall"
-            hint="One honest verdict, plus a note if you want"
-            done={entry.mood !== null}
-            index={spec.sections.length}
-            variant={TILE_VARIANTS[spec.sections.length % TILE_VARIANTS.length]}
-          >
-            <DayVerdict entry={entry} away={away} onMood={pickMood} onTags={pickTags} onNote={pickNote} onAway={(r) => markAway(selected, r)} />
-          </SectionCard>
         </div>
       ) : tab === "patterns" ? (
         <Overview
@@ -884,7 +897,7 @@ function TrackerView({
           onSend={(op, okText) => (okText ? persist(op, okText) : persistQuiet(op))}
         />
       ) : (
-        <Setup spec={spec} onSave={saveSetup} openId={setupFocus} />
+        <Setup spec={spec} onSave={saveSetup} openId={setupFocus} kept={keptSetup} onKeep={setKeptSetup} />
       )}
 
       <Toast api={toast} />
@@ -892,6 +905,7 @@ function TrackerView({
       <Nav
         tab={tab}
         shop={spec.shop === true}
+        unsaved={keptSetup !== null}
         onTab={(id) => {
           setSetupFocus(null);
           setDraft(null);

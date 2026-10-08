@@ -308,9 +308,11 @@ function AddOption({ onAdd }: { onAdd: (label: string) => void }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="chip flex items-center gap-1 rounded-full px-3.5 py-2 text-sm text-soft"
+        aria-label="Add your own, for this day"
+        title="Add your own, for this day only"
+        className="chip flex size-11 items-center justify-center rounded-full text-soft"
       >
-        <Plus size={14} /> Add for this day
+        <Plus size={16} />
       </button>
     );
   }
@@ -396,7 +398,7 @@ function Amount({
           <button
             type="button"
             onClick={() => onChange(field.key, undefined)}
-            className="text-xs text-soft underline underline-offset-2 hover:text-ink"
+            className="hit text-xs text-soft underline underline-offset-2 hover:text-ink"
           >
             reset
           </button>

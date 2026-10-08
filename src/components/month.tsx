@@ -56,7 +56,7 @@ function GoalRow({ v, onRemove }: { v: GoalView; onRemove: () => void }) {
           type="button"
           onClick={onRemove}
           aria-label={`Remove goal: ${v.title}`}
-          className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
+          className="hit -mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
         >
           <X size={14} />
         </button>
@@ -154,7 +154,7 @@ function AddGoal({
 
       {!own ? (
         choices.length > 0 && (
-          <button type="button" onClick={() => setOwn(true)} className="mt-3 block text-xs text-soft underline underline-offset-2 hover:text-ink">
+          <button type="button" onClick={() => setOwn(true)} className="hit mt-3 block text-xs text-soft underline underline-offset-2 hover:text-ink">
             Set your own
           </button>
         )
@@ -374,7 +374,7 @@ export function MonthReview({
           <span className="font-semibold">{monthName(month)} reviewed:</span> {word}.
           {review.note.trim() && <span className="text-soft"> {review.note.length > 60 ? `${review.note.slice(0, 60)}…` : review.note}</span>}
         </p>
-        <button type="button" onClick={() => setOpen(true)} className="shrink-0 text-sm font-medium underline underline-offset-2">
+        <button type="button" onClick={() => setOpen(true)} className="hit shrink-0 text-sm font-medium underline underline-offset-2">
           {review.note.trim() ? "Edit" : "Add a note"}
         </button>
       </section>

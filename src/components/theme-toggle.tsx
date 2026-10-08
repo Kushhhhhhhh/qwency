@@ -29,7 +29,7 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       onClick={toggle}
       aria-label="Switch between light and dark"
       title="Light / dark"
-      className={`flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/10 bg-surface/60 text-soft transition-[background-color,color,transform] duration-200 hover:text-ink active:scale-90 sm:size-9 ${className}`}
+      className={`hit flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/10 bg-surface/60 text-soft transition-[background-color,color,transform] duration-200 hover:text-ink active:scale-90 sm:size-9 ${className}`}
     >
       <Moon size={16} strokeWidth={2} className="dark:hidden" />
       <Sun size={16} strokeWidth={2} className="hidden dark:block" />

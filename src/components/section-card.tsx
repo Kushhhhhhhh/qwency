@@ -1,60 +1,125 @@
 "use client";
 
-import { type ReactNode } from "react";
-import { Check, Frown, Meh, Smile } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Check, ChevronDown, Frown, Meh, Smile } from "lucide-react";
 import { iconFor } from "@/lib/icons";
 import { MOODS, NOTE_MAX, type Entry, type Mood } from "@/lib/tracker";
 import type { AwayReason } from "@/lib/spec";
 import { AwayLink } from "./away";
-import { NoteField } from "./note-field";
+import { Fold } from "./fold";
+import { NoteBox, NoteButton } from "./note-field";
 import { WhySelector } from "./why-selector";
 
 export const TILE_VARIANTS = ["lilac", "meh", "good"] as const;
 export type TileVariant = (typeof TILE_VARIANTS)[number];
 
+/** how long a finished section stays open after the last answer, so a wrong tap can be put right before it folds */
+const TUCK_MS = 900;
+
+/**
+ * One section of the day. While there is still something to answer it is a coloured card with its questions; once it
+ * is finished (see lib/today) it folds into one quiet line ("Sleep · 6–7h") that opens again when tapped. So colour
+ * means "still to do", and the page gets shorter as the day gets done.
+ */
 export function SectionCard({
   icon,
   title,
   hint,
   done,
+  complete,
+  summary,
+  missed,
   muted,
   index,
   variant,
+  note,
   children,
 }: {
   icon: string;
   title: string;
   hint: string;
+  /** something is answered (the tick) */
   done: boolean;
+  /** nothing is waiting for an answer: it may fold up */
+  complete: boolean;
+  /** the answers in a few words, for the folded line */
+  summary: string;
+  /** an answer landed on the wrong side of its line (the folded line says so) */
+  missed: boolean;
   /** not planned today: still tappable, just quieter */
   muted?: boolean;
   index: number;
   variant: TileVariant;
+  /** this section's note: its saved text, and how to save a new one */
+  note: { value: string; max: number; onSave: (v: string) => Promise<boolean>; placeholder: string };
   children: ReactNode;
 }) {
   const Icon = iconFor(icon);
+  // drawn folded if it was already finished; otherwise it folds a moment after it is
+  const [settled, setSettled] = useState(complete);
+  if (!complete && settled) setSettled(false);
+  useEffect(() => {
+    if (!complete || settled) return;
+    const t = setTimeout(() => setSettled(true), TUCK_MS);
+    return () => clearTimeout(t);
+  }, [complete, settled]);
+  // opened by hand: it stays open until it is edited back to unfinished, or tapped shut
+  const [userOpen, setUserOpen] = useState(false);
+  if (!complete && userOpen) setUserOpen(false);
+  const [noteOpen, setNoteOpen] = useState(Boolean(note.value));
+
+  const folded = complete && settled && !userOpen;
+  const canFold = complete && settled;
+
+  const head = (
+    <>
+      <span className={`flex shrink-0 items-center justify-center rounded-2xl ${folded ? "size-9 bg-lilac/50" : "size-10 bg-surface/55"}`}>
+        <Icon size={folded ? 18 : 20} strokeWidth={1.8} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-base font-semibold leading-tight">{title}</h2>
+        {folded ? (
+          <p className="flex items-center gap-1.5 text-sm text-ink/85">
+            {missed && <i aria-hidden className="size-2 shrink-0 rounded-full bg-bad" />}
+            <span className="truncate">{summary}</span>
+            {missed && <span className="sr-only">(missed)</span>}
+          </p>
+        ) : (
+          <p className="text-xs text-soft">{hint}</p>
+        )}
+      </div>
+    </>
+  );
+
   return (
-    <section className={`tile tile-${variant} rise p-5`} style={{ animationDelay: `${index * 45}ms` }}>
+    <section className={`${folded ? "card px-4 py-3" : `tile tile-${variant} p-5`} rise`} style={{ animationDelay: `${index * 45}ms` }}>
       {/* dimmed on an inner wrapper: the entrance animation fills forward with opacity 1 and
           would override an opacity class on the section itself */}
       <div className={`transition-opacity ${muted ? "opacity-80" : ""}`}>
         <header className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-2xl bg-surface/55">
-            <Icon size={20} strokeWidth={1.8} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold leading-tight">{title}</h2>
-            <p className="text-xs text-soft">{hint}</p>
-          </div>
+          {canFold ? (
+            <button type="button" aria-expanded={!folded} onClick={() => setUserOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+              {head}
+              <ChevronDown size={16} aria-hidden className={`shrink-0 text-soft transition-transform duration-200 ${folded ? "" : "rotate-180"}`} />
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-3">{head}</div>
+          )}
+          {!folded && <NoteButton open={noteOpen} filled={Boolean(note.value)} label={`Note about ${title.toLowerCase()}`} onClick={() => setNoteOpen((o) => !o)} />}
           <span
-            className={`flex size-7 items-center justify-center rounded-full border transition-colors duration-300 ${
+            className={`flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors duration-300 ${
               done ? "border-transparent bg-ink" : "border-ink/20 bg-surface/30"
             }`}
           >
             {done && <Check key="c" size={15} strokeWidth={3} className="check-pop text-cream" />}
           </span>
         </header>
-        <div className="-mt-1">{children}</div>
+        <Fold open={!folded}>
+          <div className="-mt-1">
+            {children}
+            <NoteBox open={noteOpen} value={note.value} max={note.max} onSave={note.onSave} placeholder={note.placeholder} />
+          </div>
+        </Fold>
       </div>
     </section>
   );
@@ -63,26 +128,39 @@ export function SectionCard({
 const MOOD_ICON = { good: Smile, meh: Meh, bad: Frown };
 const MOOD_ICON_COLOR: Record<Mood, string> = { good: "text-good", meh: "text-meh", bad: "text-bad" };
 
-/** Overall verdict + the WHY flow (only shows on rough days) + the day-level note. */
+/**
+ * The day overall, as one slim card at the top of Today: three faces, the lightest possible way to log a day. A Rough
+ * day opens the reasons right under the faces. The day's note and "mark it away" live in the same card.
+ */
 export function DayVerdict({
   entry,
   away,
+  isToday,
+  index = 0,
   onMood,
   onTags,
   onNote,
   onAway,
 }: {
   entry: Entry;
-  /** why this day is away, if it is (the verdict isn't judged then, so it doesn't ask why it slipped) */
+  /** why this day is away, if it is (the verdict isn't judged then, so it doesn't ask what got in the way) */
   away: AwayReason | null;
+  isToday: boolean;
+  index?: number;
   onMood: (m: Mood) => void;
   onTags: (tags: string[]) => void;
   onNote: (note: string) => Promise<boolean>;
   onAway: (reason: AwayReason | null) => void;
 }) {
+  const [noteOpen, setNoteOpen] = useState(Boolean(entry.note));
   return (
-    <div className="pt-4">
-      <div className="grid grid-cols-3 gap-3">
+    <section className="card rise px-4 py-3.5" aria-label="The day overall" style={{ animationDelay: `${index * 45}ms` }}>
+      <div className="flex items-center gap-2">
+        <h2 className="min-w-0 flex-1 text-base font-semibold leading-tight">{isToday ? "How's today going?" : "How was this day?"}</h2>
+        <NoteButton open={noteOpen} filled={Boolean(entry.note)} label="Note about the day" onClick={() => setNoteOpen((o) => !o)} />
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-3 gap-2">
         {MOODS.map((m) => {
           const on = entry.mood === m.id;
           const Icon = MOOD_ICON[m.id];
@@ -92,14 +170,12 @@ export function DayVerdict({
               type="button"
               data-on={on}
               aria-pressed={on}
+              title={m.sub}
               onClick={() => onMood(m.id)}
-              className={`chip flex flex-col items-center gap-1 rounded-2xl py-4 ${
-                on ? "bg-ink text-cream shadow-md shadow-shade/30" : ""
-              }`}
+              className={`chip flex min-h-12 items-center justify-center gap-2 rounded-2xl px-2 ${on ? "bg-ink text-cream shadow-md shadow-shade/30" : ""}`}
             >
-              <Icon size={26} strokeWidth={1.8} className={on ? MOOD_ICON_COLOR[m.id] : ""} />
+              <Icon size={22} strokeWidth={1.8} className={`shrink-0 ${on ? MOOD_ICON_COLOR[m.id] : ""}`} />
               <span className="text-sm font-semibold">{m.label}</span>
-              <span className="text-xs opacity-80">{m.sub}</span>
             </button>
           );
         })}
@@ -107,16 +183,15 @@ export function DayVerdict({
 
       <WhySelector tags={entry.tags} open={entry.mood === "bad" && !away} onChange={onTags} />
 
-      <NoteField
+      <NoteBox
+        open={noteOpen}
         value={entry.note}
         max={NOTE_MAX}
         onSave={onNote}
         placeholder="Anything worth remembering about today. Wins, vents, thoughts."
-        openLabel="Add a note"
-        filledLabel="Note for this day"
       />
 
       {!away && <AwayLink onPick={onAway} />}
-    </div>
+    </section>
   );
 }

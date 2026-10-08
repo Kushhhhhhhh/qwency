@@ -182,7 +182,7 @@ function Heatmap({ entries, today, selected, spec, pulse, onPick }: Props) {
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`rounded-full px-3 py-1 capitalize transition-colors ${
+              className={`hit-y rounded-full px-3 py-1 capitalize transition-colors ${
                 mode === m ? "bg-ink text-cream" : "text-soft hover:text-ink"
               }`}
             >

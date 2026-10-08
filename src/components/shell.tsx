@@ -20,7 +20,7 @@ const TABS = [
  * know yet whether Shop is on: it carries the tab and the page hides it unless the head script saw the cookie
  * (see SHOP_COOKIE). The live bar is told (`shop`) and draws exactly the tabs you have.
  */
-export function Nav({ tab, shop, onTab, onWarm }: { tab: Tab; shop?: boolean; onTab?: (t: Tab) => void; onWarm?: (t: Tab) => void }) {
+export function Nav({ tab, shop, unsaved, onTab, onWarm }: { tab: Tab; shop?: boolean; unsaved?: boolean; onTab?: (t: Tab) => void; onWarm?: (t: Tab) => void }) {
   return (
     <nav className="fixed bottom-5 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-ink/10 bg-surface/90 p-1 shadow-xl shadow-shade/15 backdrop-blur-md">
       {TABS.filter(([id]) => id !== "shop" || shop !== false).map(([id, label, Icon]) => (
@@ -33,13 +33,17 @@ export function Nav({ tab, shop, onTab, onWarm }: { tab: Tab; shop?: boolean; on
           onFocus={onWarm ? () => onWarm(id) : undefined}
           onTouchStart={onWarm ? () => onWarm(id) : undefined}
           aria-current={tab === id}
-          aria-label={label}
+          aria-label={id === "setup" && unsaved ? `${label}, unsaved changes` : label}
           className={`${id === "shop" && shop === undefined ? "nav-shop " : ""}flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-sm font-medium transition-[background-color,color,transform] duration-200 active:scale-95 sm:px-4 ${
             tab === id ? "bg-ink text-cream" : "text-soft hover:text-ink"
           }`}
         >
-          <Icon size={17} strokeWidth={2} />
-          <span className="hidden sm:inline">{label}</span>
+          <span className="relative flex">
+            <Icon size={17} strokeWidth={2} />
+            {id === "setup" && unsaved && tab !== "setup" && <i aria-hidden className="absolute -right-1 -top-1 size-2 rounded-full bg-bad ring-2 ring-surface" />}
+          </span>
+          {/* the tab you are on says its name, so no icon is a guess; the others keep to icons on a phone */}
+          <span className={tab === id ? "inline" : "hidden sm:inline"}>{label}</span>
         </button>
       ))}
     </nav>

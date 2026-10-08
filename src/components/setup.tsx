@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus, RotateCcw, ShoppingBag, Trash2 } from "lucide-react";
 import {
   DEFAULT_SPEC,
@@ -36,24 +36,62 @@ const select = `${input} appearance-none`;
 
 const allKeys = (spec: HabitSpec) => new Set(spec.sections.flatMap((s) => s.fields.map((f) => f.key)));
 
+type Part = "day" | "app";
+
+/**
+ * An unsaved Setup draft, kept by the app while you look at another tab (Setup is only built while it's on screen, so
+ * without this a half-made change would be gone the moment you left). `base` is the saved setup it was started from:
+ * if that has changed since (on another device), the draft is no longer a fair starting point and is dropped.
+ */
+export type Kept = { base: string; draft: HabitSpec; open: string[]; part: Part };
+
+/** What "the same setup" means for a draft: history and removed options are the server's, and Shop saves on its own. */
+export const keptBase = (spec: HabitSpec) => canon(spec, "past", "gone", "shop");
+
 export function Setup({
   spec,
   onSave,
   openId,
+  kept = null,
+  onKeep,
 }: {
   spec: HabitSpec;
   onSave: (next: HabitSpec) => Promise<boolean>;
   /** a section to open straight away, e.g. when arriving from a Patterns row */
   openId?: string | null;
+  /** an unsaved draft from earlier in this visit, to pick up where you left off */
+  kept?: Kept | null;
+  /** told about the draft whenever it changes (null once there is nothing unsaved) */
+  onKeep?: (k: Kept | null) => void;
 }) {
-  const [draft, setDraft] = useState(spec);
+  const base = keptBase(spec);
+  const again = kept && kept.base === base ? kept : null;
+  const [draft, setDraft] = useState(again?.draft ?? spec);
   const [save, setSave] = useState<Save>("idle");
   const [shopSave, setShopSave] = useState<Save>("idle");
   // Collapsed by default — editing one section shouldn't mean scrolling past every other one.
-  const [open, setOpen] = useState<Set<string>>(new Set(openId ? [openId] : []));
+  const [open, setOpen] = useState<Set<string>>(() => new Set(openId ? [openId] : (again?.open ?? [])));
+  const [part, setPart] = useState<Part>(openId ? "day" : (again?.part ?? "day"));
   // history (`past`) and removed options (`gone`) are kept by the server, not edited here, so they never count as an unsaved
   // change; neither does Shop, which is switched on or off at once (below) and never waits for the Save pill
-  const dirty = canon(draft, "past", "gone", "shop") !== canon(spec, "past", "gone", "shop");
+  const dirty = keptBase(draft) !== base;
+
+  // the app keeps the draft while you're on another tab (through a ref, so a new callback each render can't loop this)
+  const report = useRef(onKeep);
+  useEffect(() => {
+    report.current = onKeep;
+  });
+  useEffect(() => {
+    report.current?.(dirty ? { base, draft, open: [...open], part } : null);
+  }, [dirty, base, draft, open, part]);
+
+  // closing the browser tab or reloading with something unsaved asks first
+  useEffect(() => {
+    if (!dirty) return;
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", ask);
+    return () => window.removeEventListener("beforeunload", ask);
+  }, [dirty]);
 
   function toggle(id: string) {
     setOpen((o) => {
@@ -121,83 +159,106 @@ export function Setup({
 
   return (
     <div className="flex flex-col gap-4 pb-24">
-      <section className="card p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-soft">Setup</p>
-        <h2 className="mt-1 text-base font-semibold">What you track each day</h2>
-        <p className="mt-1 text-sm text-soft">
-          Change what your day tracks. Changing a rule counts from today on, so past days keep the
-          rule they had; a rule you set for the first time covers days already logged. The overall
-          verdict stays fixed for everyone so patterns stay comparable.
-        </p>
-        <div className="mt-4">
+      {/* two jobs, kept apart: what your day asks, and how the app itself behaves */}
+      <div role="tablist" aria-label="Setup" className="flex rounded-full border border-ink/10 bg-surface/70 p-0.5 text-sm font-medium">
+        {(
+          [
+            ["day", "Your day"],
+            ["app", "The app"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={part === id}
+            onClick={() => setPart(id)}
+            className={`flex min-h-11 flex-1 items-center justify-center gap-2 rounded-full px-4 transition-colors ${part === id ? "bg-ink text-cream" : "text-soft hover:text-ink"}`}
+          >
+            {label}
+            {id === "day" && dirty && <span aria-label="unsaved changes" className={`size-2 rounded-full ${part === id ? "bg-cream" : "bg-ink"}`} />}
+          </button>
+        ))}
+      </div>
+
+      {part === "day" ? (
+        <>
+          <p className="px-1 text-sm leading-snug text-soft">
+            What your day asks. A rule you change counts from today on, and past days keep the rule they had. A rule you set for the first
+            time also covers the days you already logged.
+          </p>
+
+          {draft.sections.map((section, i) => (
+            <SectionEditor
+              key={section.id}
+              section={section}
+              index={i}
+              total={draft.sections.length}
+              spec={draft}
+              isOpen={open.has(section.id)}
+              onToggle={() => toggle(section.id)}
+              onChange={(patch) => updateSection(i, patch)}
+              onMove={(dir) => moveSection(i, dir)}
+              onRemove={() => removeSection(i)}
+            />
+          ))}
+
+          <button
+            type="button"
+            onClick={addSection}
+            disabled={draft.sections.length >= LIMITS.sections}
+            className="chip flex items-center justify-center gap-2 rounded-2xl py-4 text-sm font-medium disabled:opacity-40"
+          >
+            <Plus size={16} /> Add section
+          </button>
+          {draft.sections.length >= LIMITS.sections ? (
+            <p className="text-center text-xs text-soft">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
+          ) : (
+            <p className="px-1 text-center text-xs text-soft">The day overall (Good, Okay, Rough) is always there, so patterns stay comparable.</p>
+          )}
           <button
             type="button"
             onClick={() => setDraft(DEFAULT_SPEC)}
-            className="flex items-center gap-1 text-sm text-soft hover:text-ink"
+            className="hit mx-auto flex items-center gap-1 text-sm text-soft hover:text-ink"
           >
-            <RotateCcw size={14} /> Reset to default
+            <RotateCcw size={14} /> Start over with the example setup
           </button>
-        </div>
-      </section>
+        </>
+      ) : (
+        <>
+          <section className="card p-4">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={spec.shop === true}
+              disabled={shopSave === "saving"}
+              onClick={() => setShop(spec.shop !== true)}
+              className="flex w-full items-center gap-3 text-left disabled:opacity-60"
+            >
+              <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-lilac/50">
+                <ShoppingBag size={20} strokeWidth={1.8} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-base font-semibold leading-tight">Shop</span>
+                <span className="mt-0.5 block text-sm leading-snug text-soft">Your monthly pocket</span>
+                <span className="mt-1 block text-sm font-medium leading-snug">
+                  {spec.shop ? "On. See the bag in the bar." : "Off. Tap to add it to the bar."}
+                </span>
+              </span>
+              <span aria-hidden className="switch">
+                <span className="switch-knob" />
+              </span>
+            </button>
+            {shopSave === "error" && (
+              <p role="alert" className="mt-2 text-sm font-medium text-danger">
+                Couldn&apos;t save, try again.
+              </p>
+            )}
+          </section>
 
-      {draft.sections.map((section, i) => (
-        <SectionEditor
-          key={section.id}
-          section={section}
-          index={i}
-          total={draft.sections.length}
-          spec={draft}
-          isOpen={open.has(section.id)}
-          onToggle={() => toggle(section.id)}
-          onChange={(patch) => updateSection(i, patch)}
-          onMove={(dir) => moveSection(i, dir)}
-          onRemove={() => removeSection(i)}
-        />
-      ))}
-
-      <button
-        type="button"
-        onClick={addSection}
-        disabled={draft.sections.length >= LIMITS.sections}
-        className="chip flex items-center justify-center gap-2 rounded-2xl py-4 text-sm font-medium disabled:opacity-40"
-      >
-        <Plus size={16} /> Add section
-      </button>
-      {draft.sections.length >= LIMITS.sections && (
-        <p className="text-center text-xs text-soft">Max {LIMITS.sections} sections keeps the day quick to fill in.</p>
+          <Appearance />
+        </>
       )}
-
-      <section className="card p-4">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={spec.shop === true}
-          disabled={shopSave === "saving"}
-          onClick={() => setShop(spec.shop !== true)}
-          className="flex w-full items-center gap-3 text-left disabled:opacity-60"
-        >
-          <span aria-hidden className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-lilac/50">
-            <ShoppingBag size={20} strokeWidth={1.8} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-base font-semibold leading-tight">Shop</span>
-            <span className="mt-0.5 block text-sm leading-snug text-soft">Your monthly pocket</span>
-            <span className="mt-1 block text-sm font-medium leading-snug">
-              {spec.shop ? "On. See the bag in the bar." : "Off. Tap to add it to the bar."}
-            </span>
-          </span>
-          <span aria-hidden className="switch">
-            <span className="switch-knob" />
-          </span>
-        </button>
-        {shopSave === "error" && (
-          <p role="alert" className="mt-2 text-sm font-medium text-danger">
-            Couldn&apos;t save, try again.
-          </p>
-        )}
-      </section>
-
-      <Appearance />
 
       {/* follows you down the page once there's something to save — no scrolling back up,
           and it just quietly disappears on a successful save instead of popping a toast */}
@@ -207,7 +268,7 @@ export function Setup({
             {save === "error" ? "Couldn't save, try again" : "Unsaved changes"}
           </span>
           {save !== "saving" && (
-            <button type="button" onClick={() => setDraft(spec)} className="text-sm text-soft underline underline-offset-2 hover:text-ink">
+            <button type="button" onClick={() => setDraft(spec)} className="hit text-sm text-soft underline underline-offset-2 hover:text-ink">
               Discard
             </button>
           )}
@@ -215,7 +276,7 @@ export function Setup({
             type="button"
             onClick={handleSave}
             disabled={save === "saving"}
-            className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-cream shadow-md shadow-shade/30 transition-opacity disabled:opacity-60"
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream shadow-md shadow-shade/30 transition-opacity disabled:opacity-60"
           >
             {save === "saving" ? "Saving…" : "Save"}
           </button>
@@ -541,14 +602,14 @@ function FieldEditor({
           className={`${input} flex-1 text-sm font-medium`}
         />
         <div className="flex shrink-0 gap-1">
-          <button type="button" onClick={() => onMove(-1)} disabled={isFirst} aria-label="Move up" className="chip flex size-8 items-center justify-center rounded-full disabled:opacity-30">
+          <button type="button" onClick={() => onMove(-1)} disabled={isFirst} aria-label="Move up" className="chip flex size-9 items-center justify-center rounded-full disabled:opacity-30">
             <ChevronDown size={14} className="rotate-180" />
           </button>
-          <button type="button" onClick={() => onMove(1)} disabled={isLast} aria-label="Move down" className="chip flex size-8 items-center justify-center rounded-full disabled:opacity-30">
+          <button type="button" onClick={() => onMove(1)} disabled={isLast} aria-label="Move down" className="chip flex size-9 items-center justify-center rounded-full disabled:opacity-30">
             <ChevronDown size={14} />
           </button>
           {onRemove && (
-            <button type="button" onClick={onRemove} aria-label="Remove question" className="chip flex size-8 items-center justify-center rounded-full text-danger">
+            <button type="button" onClick={onRemove} aria-label="Remove question" className="chip flex size-9 items-center justify-center rounded-full text-danger">
               <Trash2 size={14} />
             </button>
           )}
@@ -582,7 +643,7 @@ function FieldEditor({
               Unit
               <input value={field.unit} maxLength={20} onChange={(e) => onChange({ unit: e.target.value })} className={`${input} w-24 py-1`} />
             </label>
-            <p className="w-full text-xs text-soft">Falling short counts as a slip once the day is over.</p>
+            <p className="w-full text-xs text-soft">Falling short counts as missed once the day is over.</p>
           </div>
         )}
         {field.kind === "amount" && (
@@ -664,8 +725,8 @@ function FieldEditor({
               <p className="w-full text-xs text-soft">
                 {field.target
                   ? field.target.op === "atMost"
-                    ? "Going over it counts as a slip."
-                    : "Falling short counts as a slip once the day is over."
+                    ? "Going over it counts as missed."
+                    : "Falling short counts as missed once the day is over."
                   : "Optional. Set one and Patterns will show the days you missed it."}
               </p>
             </div>
@@ -747,7 +808,7 @@ function OptionsEditor({
           <input value={o.label} maxLength={30} onChange={(e) => update(i, { label: e.target.value })} className={`${input} flex-1 py-1.5 text-sm`} />
           {tones && <TonePicker value={o.tone} onChange={(tone) => update(i, { tone })} />}
           {options.length > 2 && (
-            <button type="button" onClick={() => remove(i)} aria-label="Remove option" className="chip flex size-7 items-center justify-center rounded-full text-danger">
+            <button type="button" onClick={() => remove(i)} aria-label="Remove option" className="chip flex size-9 items-center justify-center rounded-full text-danger">
               <Trash2 size={12} />
             </button>
           )}
@@ -765,11 +826,11 @@ function OptionsEditor({
 
       {tones && (
         <div className="space-y-1.5 border-t border-ink/10 pt-2 text-xs text-soft">
-          <p>Orange means a slip on Patterns. Yellow and green don&apos;t.</p>
+          <p>Orange means missed on Patterns. Yellow and green don&apos;t.</p>
           {options.length >= 3 &&
             (cutoff ? (
               <label className="flex flex-wrap items-center gap-2">
-                Good from (everything before it becomes a slip)
+                Good from (everything before it counts as missed)
                 <select
                   value=""
                   onChange={(e) => {

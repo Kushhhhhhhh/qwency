@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 import { awayOf, dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
-import { addDays, weekdayIndex, WEEKDAYS, type Entries } from "@/lib/tracker";
+import { addDays, shortDate, weekdayIndex, WEEKDAYS, type Entries } from "@/lib/tracker";
 
 const DAYS = 21;
 
@@ -42,7 +42,7 @@ export function DayStrip({
             key={d}
             type="button"
             onClick={() => onSelect(d)}
-            aria-label={away ? `${d}, away` : d}
+            aria-label={`${shortDate(d)}${d === today ? " (today)" : ""}, ${away ? "away" : complete ? "a full day" : active ? "partly logged" : "nothing logged"}`}
             aria-current={on ? "date" : undefined}
             className={`flex w-12 shrink-0 flex-col items-center gap-1 rounded-2xl border py-2 transition-[background-color,border-color,box-shadow,transform] duration-200 active:scale-95 ${
               on

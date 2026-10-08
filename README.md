@@ -137,14 +137,38 @@ every column, so a missing one just means no goals yet) but saving goals fails.
 
 ## The daily loop and first impressions
 
-- **Catch-up and "still open"** (`src/components/nudge.tsx`, `catchUp` / `openDetails` in
-  `src/lib/insights.ts`): on Today, a quiet line when yesterday had planned sections you never logged
-  (one tap goes to that day; dismissing is remembered for the day, in a small cookie so the server
-  already knows), and after 8pm a line with what's still open today. Both read the same mirror as Patterns.
-  The evening line tells two things apart: sections with nothing logged ("1 thing still open today: Gym.")
-  and sections you did log but that are still under their goal ("Still short of your goal today: Skin &
-  water (5 of 8 glasses)."). A section's tick means "you logged something here"; reaching the goal is a
-  separate line you drew in Setup.
+- **Today, top to bottom** (`tracker.tsx`, `section-card.tsx`, `lib/today.ts`, `nudge.tsx`, `first-run.tsx`).
+  1. A new account (nothing logged anywhere) gets one short card, "Start anywhere": nothing is required, and
+     what the ring and the dots under the days mean. It goes by itself with the first tap.
+  2. One quiet box for the two nudges, each line with the same small close button: "Wednesday: 6 not logged.
+     Fill in · Away?" (yesterday had planned sections you never logged) and, after 8pm, "4 things still open
+     today. Away today?". Closing either is remembered (a small cookie, "w" week / "e" evening / the day, so
+     the server already knows). Both read the same mirror as Patterns. A section's tick means "you logged
+     something here"; reaching a goal is a separate line you drew in Setup.
+  3. **The day overall comes first**, as one slim card: three faces ("How's today going?"). That is the lightest
+     possible way to log a day. A Rough day asks "What got in the way?" right under the faces; the day's note
+     (the pen) and "mark it away" live in the same card.
+  4. **Each section folds into one line when it is finished** ("Sleep · 6–7h", with a red dot and "(missed)" for
+     the screen reader if an answer went the wrong way): a coloured card means "still to do", a quiet one means
+     "done", and the page gets shorter as the day gets done. "Finished" is `sectionComplete`: every question
+     that is showing and has to be answered is answered, a counter has reached its goal (on a past day there
+     is nothing left to reach), and picks you may or may not make (which muscles, a reason after a skip) never
+     keep it open. It folds a moment (about a second) after the last answer so a wrong tap can be put right,
+     opens again when tapped, and a day opened later is drawn already folded (its questions aren't even built
+     until opened).
+  5. **One pen per card** opens that section's note (a dot says there is one), instead of a "+ Note" line under
+     every card; "add your own, for this day only" is a small + after the options.
+  Touch: an answer you tap is 44px tall, the small reason chips 36px, and small links and close buttons keep
+  their size but get an invisible finger-sized area (`.hit`, `.hit-y`). The progress ring and each day in the
+  strip say in words what they are.
+- **Setup** is two parts, switched at the top: *Your day* (the sections) and *The app* (Shop, Colours). An unsaved
+  draft is kept by the app while you look at another tab (Setup is only built while it is on screen): the bottom
+  bar shows a dot on Setup, you come back to the same draft and open section, closing or reloading the page
+  asks first, and a draft made against a setup that has since changed (on another device) is dropped rather
+  than laid over the newer one.
+- **Journal** reads back every note newest first, under a heading for each month, with the day's feeling as a filled
+  face (and said in words for a screen reader). With no notes it says where they come from: the pen on Today.
+- **The bottom bar names the tab you are on** (icons only for the rest on a phone), so no icon is a guess.
 - **Number boxes in Setup** (a counter's "Hit at least" and "Max") are checked when you leave the box, not
   on every key, so you can clear one and type a new number (`settleWhole` in `src/lib/spec.ts`). A goal
   above the max lifts the max with it.
@@ -318,9 +342,9 @@ The tab itself: think of the **pocket** (your budget for the month) as a suitcas
 are packed first, wants fill what's left, and a dashed line shows where it's full. Everything below the
 line waits for next month.
 
-- **Three shelves**: *This month* (planned, counted against the pocket, each a Need or a Want), *Window*
-  (links saved to look at later, never counted, no price needed) and *Bought* (receipts with what you
-  actually paid, plus what you decided to skip). A thing moves Window -> This month -> Bought or Skipped.
+- **Three shelves**: *This month* (planned, counted against the pocket, each a Need or a Want), *Saved*
+  (links to look at later, never counted, no price needed; `window` in the code) and *Bought* (receipts with what you
+  actually paid, plus what you decided to skip). A thing moves Saved -> This month -> Bought or Skipped.
   On a new month, things still planned from before are offered a carry-over.
 - **Pocket arithmetic** (`src/lib/shop.ts`, `pocketView`): `left = pocket - bought - planned`; the order is
   needs, then wants, each in the order you set (arrows in the editor); the line falls where the running

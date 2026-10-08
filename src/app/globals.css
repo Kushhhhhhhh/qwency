@@ -310,10 +310,30 @@ html:not([data-shop="1"]) .nav-shop {
   border-color: var(--color-cream);
 }
 
+/* Small links and icon buttons keep their size but get a finger-sized touch area (the invisible ::after). */
+.hit {
+  position: relative;
+}
+.hit::after {
+  content: "";
+  position: absolute;
+  inset: -0.8rem -0.5rem;
+}
+/* for things that sit shoulder to shoulder (a row of toggles): taller to touch, never wider into a neighbour */
+.hit-y {
+  position: relative;
+}
+.hit-y::after {
+  content: "";
+  position: absolute;
+  inset: -0.55rem 0;
+}
+
 /* ---- chips ---- */
 /* in the components layer so utilities like bg-ink win over these defaults */
 @layer components {
   .chip {
+    min-height: 2.25rem;
     border: 1px solid color-mix(in oklab, var(--color-ink) 16%, transparent);
     background: color-mix(in oklab, var(--color-surface) 70%, transparent);
     transition: transform 140ms cubic-bezier(0.3, 1.5, 0.5, 1), background-color 160ms, border-color 160ms, color 160ms;

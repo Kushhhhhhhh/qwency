@@ -23,7 +23,7 @@ export function Chip({
       data-on={on}
       aria-pressed={on}
       onClick={onClick}
-      className={`chip rounded-full font-medium ${small ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm"} ${
+      className={`chip rounded-full font-medium ${small ? "px-3 py-1.5 text-xs" : "min-h-11 px-4 py-2 text-sm"} ${
         on ? "bg-ink text-cream shadow-md shadow-shade/30" : "text-ink"
       }`}
     >
@@ -38,8 +38,8 @@ export function ProgressRing({ value, total, size = 52 }: { value: number; total
   const c = 2 * Math.PI * r;
   const done = value >= total;
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
+    <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={`${value} of ${total} done today`} title={`${value} of ${total} done`}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={5} className="stroke-ink/10" />
         <circle
           cx={size / 2}

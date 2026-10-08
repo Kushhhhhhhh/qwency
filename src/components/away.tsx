@@ -34,7 +34,7 @@ export function AwayLink({ onPick }: { onPick: (reason: AwayReason) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="mt-4 border-t border-ink/10 pt-3">
-      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="text-left text-sm text-soft hover:text-ink">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="hit text-left text-sm text-soft hover:text-ink">
         Not a normal day? <span className="font-medium text-ink underline underline-offset-2">Mark it away</span>
       </button>
       <Fold open={open}>
@@ -73,7 +73,7 @@ export function AwayBanner({ reason, isToday, onPick }: { reason: AwayReason; is
           Not away
         </button>
       </div>
-      <button type="button" aria-expanded={changing} onClick={() => setChanging((c) => !c)} className="mt-2 text-xs font-medium text-ink underline underline-offset-2">
+      <button type="button" aria-expanded={changing} onClick={() => setChanging((c) => !c)} className="hit mt-2 text-xs font-medium text-ink underline underline-offset-2">
         Change why
       </button>
       <Fold open={changing}>

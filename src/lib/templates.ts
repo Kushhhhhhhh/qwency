@@ -9,7 +9,7 @@ import { EVERY_DAY, WEEKDAYS_ONLY, sanitizeSpec, type FieldSpec, type HabitSpec,
 export type Template = {
   id: string;
   title: string;
-  /** one line on the card, including what counts as a slip */
+  /** one line on the card, including what counts as missed */
   blurb: string;
   section: SectionSpec;
 };
@@ -27,7 +27,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "sleep",
     title: "Sleep",
-    blurb: "How long you slept. Under 6 hours counts as a slip.",
+    blurb: "How long you slept. Under 6 hours counts as missed.",
     section: section("sleep", "Sleep", "Last night", "moon", EVERY_DAY, [
       {
         kind: "single",
@@ -46,7 +46,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "move",
     title: "Exercise",
-    blurb: "Did you train or move? Skipping counts as a slip, with a quick why.",
+    blurb: "Did you train or move? Skipping counts as missed, with a quick why.",
     section: section("move", "Exercise", "Training or movement", "dumbbell", EVERY_DAY, [
       {
         kind: "single",
@@ -77,7 +77,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "focus",
     title: "Focus & work",
-    blurb: "How focused your workday was. Scattered counts as a slip.",
+    blurb: "How focused your workday was. Scattered counts as missed.",
     section: section("focus", "Focus & work", "How the work went", "briefcase", WEEKDAYS_ONLY, [
       {
         kind: "single",
@@ -94,7 +94,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "water",
     title: "Water",
-    blurb: "Glasses of water. Under 8 counts as a slip once the day is over.",
+    blurb: "Glasses of water. Under 8 counts as missed once the day is over.",
     section: section("water", "Water", "Stay hydrated", "droplets", EVERY_DAY, [
       { kind: "counter", key: "water", label: "Water", max: 12, goal: 8, unit: "glasses" },
     ]),
@@ -135,7 +135,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "learn",
     title: "Learning",
-    blurb: "Minutes you studied or practised. Under 30 counts as a slip.",
+    blurb: "Minutes you studied or practised. Under 30 counts as missed.",
     section: section("learn", "Learning", "Study or practice", "book", WEEKDAYS_ONLY, [
       {
         kind: "amount",
@@ -151,7 +151,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "eating",
     title: "Eating",
-    blurb: "How you ate. Off track counts as a slip.",
+    blurb: "How you ate. Off track counts as missed.",
     section: section("eating", "Eating", "How you fed yourself", "utensils", EVERY_DAY, [
       {
         kind: "single",
@@ -168,7 +168,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "care",
     title: "Self-care",
-    blurb: "Small things you did for yourself. Nothing here counts as a slip.",
+    blurb: "Small things you did for yourself. Nothing here counts as missed.",
     section: section("care", "Self-care", "Small things that count", "heart", EVERY_DAY, [
       {
         kind: "multi",
@@ -187,7 +187,7 @@ export const TEMPLATES: Template[] = [
   {
     id: "screen",
     title: "Screen time",
-    blurb: "How much your phone took. A lot counts as a slip.",
+    blurb: "How much your phone took. A lot counts as missed.",
     section: section("screen", "Screen time", "Phone and scrolling", "smartphone", EVERY_DAY, [
       {
         kind: "single",

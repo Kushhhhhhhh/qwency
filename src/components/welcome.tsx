@@ -57,7 +57,7 @@ export function Welcome() {
       <p className="text-xs font-medium uppercase tracking-wider text-soft">Welcome</p>
       <h1 className="mt-1 text-3xl font-semibold leading-tight tracking-tight">What do you want to look at?</h1>
       <p className="mt-3 text-[15px] leading-relaxed text-soft">
-        Pick the parts of your day you care about. Qwency shows you what actually happened, where it slipped, and why, with no
+        Pick the parts of your day you care about. Qwency shows you what actually happened, what was missed, and why, with no
         scores and no judgment. Change, add or remove any of it later.
       </p>
 
@@ -104,7 +104,7 @@ export function Welcome() {
           type="button"
           onClick={() => start(buildStarter(["sleep", "move", "focus", "spend"]))}
           disabled={saving}
-          className="text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
+          className="hit text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
         >
           Or start with a suggested few
         </button>
@@ -115,7 +115,7 @@ export function Welcome() {
           type="button"
           onClick={() => start(DEFAULT_SPEC)}
           disabled={saving}
-          className="text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
+          className="hit text-soft underline underline-offset-2 hover:text-ink disabled:opacity-50"
         >
           Use the example setup
         </button>

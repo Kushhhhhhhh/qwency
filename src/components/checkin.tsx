@@ -58,7 +58,7 @@ export function CheckinCard({
           type="button"
           onClick={onClose}
           aria-label="Not now"
-          className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
+          className="hit -mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
         >
           <X size={14} />
         </button>
@@ -103,7 +103,7 @@ function WalkStep({
         <p className="min-w-0 flex-1 text-xs font-medium uppercase tracking-wider text-soft">
           Last week · {walk.i + 1} of {walk.steps.length}
         </p>
-        <button type="button" onClick={onClose} aria-label="Not now" className="-mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink">
+        <button type="button" onClick={onClose} aria-label="Not now" className="hit -mr-1 flex size-6 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink">
           <X size={14} />
         </button>
       </div>

@@ -63,8 +63,7 @@ export function Appearance() {
 
   return (
     <section className="card p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-soft">Look</p>
-      <h2 className="mt-1 text-base font-semibold">Colours</h2>
+      <h2 className="text-base font-semibold">Colours</h2>
       <p className="mt-1 text-sm text-soft">
         Only the colours change, never your days. It applies right away, on this device. Light and dark is the little button at the top.
       </p>

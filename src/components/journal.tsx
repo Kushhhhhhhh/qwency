@@ -1,8 +1,8 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
 import { Frown, Meh, Search, Smile } from "lucide-react";
-import { MOODS, WHY_TAGS, prettyDate, type Entries, type Entry, type Mood } from "@/lib/tracker";
+import { MOODS, WHY_TAGS, monthOf, prettyDate, type Entries, type Entry, type Mood } from "@/lib/tracker";
 import { sectionNoteKey, type HabitSpec } from "@/lib/spec";
 import { iconFor } from "@/lib/icons";
 
@@ -13,7 +13,11 @@ import { iconFor } from "@/lib/icons";
 // is its own moment, tied to its section's context).
 
 const MOOD_ICON = { good: Smile, meh: Meh, bad: Frown };
-const MOOD_TEXT: Record<Mood, string> = { good: "text-good", meh: "text-meh", bad: "text-bad" };
+const MOOD_BG: Record<Mood, string> = { good: "bg-good", meh: "bg-meh", bad: "bg-bad" };
+const MOOD_WORD: Record<Mood, string> = { good: "a good day", meh: "an okay day", bad: "a rough day" };
+
+/** "October 2026", for the heading over a month's notes. */
+const monthHeading = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 const WHY_LABEL = new Map<string, string>(WHY_TAGS.map((t) => [t.id, t.label]));
 
 // Long histories are shown a page at a time: a year of notes is hundreds of cards, and drawing them
@@ -69,17 +73,16 @@ export function Journal({
   return (
     <div className="flex flex-col gap-4">
       <section className="tile tile-lilac p-5">
-        <p className="text-xs font-medium uppercase tracking-wider text-soft">Journal</p>
-        <h2 className="mt-1 text-base font-semibold">Everything you've written</h2>
+        <h2 className="text-base font-semibold">{all.length === 0 ? "No notes yet" : `${all.length} note${all.length === 1 ? "" : "s"} so far`}</h2>
         <p className="mt-1 text-sm text-soft">
           {all.length === 0
-            ? "Anything you jot down — on a section or at the end of a day — shows up here."
-            : `${all.length} note${all.length === 1 ? "" : "s"} so far.`}
+            ? "Tap the pen on Today, on any card or on the day itself. What you write shows up here, newest first."
+            : "Newest first. Tap one to open that day."}
         </p>
 
         {all.length > 0 && (
           <>
-            <div className="mt-4 flex items-center gap-2 rounded-full border border-ink/15 bg-surface/70 px-3 py-2">
+            <div className="mt-4 flex min-h-11 items-center gap-2 rounded-full border border-ink/15 bg-surface/70 px-3 py-2">
               <Search size={15} className="shrink-0 text-soft" />
               <input
                 value={query}
@@ -121,38 +124,48 @@ export function Journal({
       )}
 
       <div className="flex flex-col gap-3">
-        {shown.map((it) => {
+        {shown.map((it, i) => {
           const MoodIcon = it.entry.mood ? MOOD_ICON[it.entry.mood] : null;
           const SectionIcon = it.source.kind === "section" ? iconFor(it.source.icon) : null;
+          // a new month starts under its own small heading, so a long list has places to stop
+          const month = monthOf(it.date);
+          const newMonth = i === 0 || monthOf(shown[i - 1].date) !== month;
           return (
-            <button
-              key={`${it.date}|${it.source.kind === "section" ? it.source.id : "day"}`}
-              type="button"
-              onClick={() => onPick(it.date)}
-              // off-screen cards aren't laid out or painted until they scroll near
-              className="card rise p-4 text-left transition-transform [contain-intrinsic-size:auto_6rem] [content-visibility:auto] active:scale-[0.99]"
-            >
-              <div className="flex flex-wrap items-center gap-2 text-xs text-soft">
-                {MoodIcon && <MoodIcon size={15} strokeWidth={2} className={MOOD_TEXT[it.entry.mood!]} />}
-                <span className="font-medium">{prettyDate(it.date)}</span>
-                {it.source.kind === "section" && SectionIcon && (
-                  <span className="flex items-center gap-1 rounded-full bg-lilac/40 px-2 py-0.5 text-xs font-medium text-ink">
-                    <SectionIcon size={11} strokeWidth={2} />
-                    {it.source.title}
-                  </span>
-                )}
-              </div>
-              <p className="mt-1.5 whitespace-pre-wrap text-sm leading-snug text-ink/90">{it.text}</p>
-              {it.source.kind === "day" && it.entry.mood === "bad" && it.entry.tags.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {it.entry.tags.map((t) => (
-                    <span key={t} className="rounded-full bg-bad/15 px-2 py-0.5 text-xs font-medium text-ink">
-                      {WHY_LABEL.get(t) ?? t}
+            <Fragment key={`${it.date}|${it.source.kind === "section" ? it.source.id : "day"}`}>
+              {newMonth && <h2 className="px-1 pt-2 text-xs font-semibold uppercase tracking-wider text-soft">{monthHeading(month)}</h2>}
+              <button
+                type="button"
+                onClick={() => onPick(it.date)}
+                // off-screen cards aren't laid out or painted until they scroll near
+                className="card rise p-4 text-left transition-transform [contain-intrinsic-size:auto_6rem] [content-visibility:auto] active:scale-[0.99]"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs text-soft">
+                  {MoodIcon && it.entry.mood && (
+                    <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-onpastel ${MOOD_BG[it.entry.mood]}`}>
+                      <MoodIcon size={15} strokeWidth={2} aria-hidden />
+                      <span className="sr-only">{MOOD_WORD[it.entry.mood]}</span>
                     </span>
-                  ))}
+                  )}
+                  <span className="font-medium">{prettyDate(it.date)}</span>
+                  {it.source.kind === "section" && SectionIcon && (
+                    <span className="flex items-center gap-1 rounded-full bg-lilac/40 px-2 py-0.5 text-xs font-medium text-ink">
+                      <SectionIcon size={12} strokeWidth={2} />
+                      {it.source.title}
+                    </span>
+                  )}
                 </div>
-              )}
-            </button>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-snug text-ink/90">{it.text}</p>
+                {it.source.kind === "day" && it.entry.mood === "bad" && it.entry.tags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {it.entry.tags.map((t) => (
+                      <span key={t} className="rounded-full bg-bad/15 px-2 py-0.5 text-xs font-medium text-ink">
+                        {WHY_LABEL.get(t) ?? t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            </Fragment>
           );
         })}
       </div>

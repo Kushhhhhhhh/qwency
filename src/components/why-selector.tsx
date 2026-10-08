@@ -5,7 +5,7 @@ import { Fold } from "./fold";
 import { Chip } from "./ui";
 
 /**
- * "Why did this slip?" — the same shared, fixed reason vocabulary wherever a bad-toned
+ * "What got in the way?" — the same shared, fixed reason vocabulary wherever a bad-toned
  * answer shows up (the day verdict, or any single-choice field). Uses the same ink-fill
  * every other selected chip in the app uses. An earlier version filled selected chips
  * lilac for a "this is data, not a verdict" distinction — but section cards are now
@@ -17,7 +17,7 @@ export function WhySelector({
   tags,
   open,
   onChange,
-  prompt = "No judgment — why did this slip?",
+  prompt = "No judgment. What got in the way?",
   small,
 }: {
   tags: string[];

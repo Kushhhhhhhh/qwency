@@ -80,16 +80,16 @@ export function MirrorCard({
 
   return (
     <section className="tile tile-meh p-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p className="text-xs font-medium uppercase tracking-wider text-soft">The mirror</p>
-        <div className="flex rounded-full border border-ink/10 bg-surface/70 p-0.5 text-xs font-medium">
+        <div className="flex rounded-full border border-ink/10 bg-surface/70 p-0.5 text-xs font-medium whitespace-nowrap">
           {options.map((o) => (
             <button
               key={o.id}
               type="button"
               onClick={() => onChange(o.id)}
               aria-pressed={value === o.id}
-              className={`rounded-full px-2.5 py-1 transition-colors ${value === o.id ? "bg-ink text-cream" : "text-soft hover:text-ink"}`}
+              className={`hit-y rounded-full px-2.5 py-1 transition-colors ${value === o.id ? "bg-ink text-cream" : "text-soft hover:text-ink"}`}
             >
               {o.label}
             </button>
@@ -161,7 +161,7 @@ export function MirrorCard({
                       onClick={() => onJump(r.id)}
                       aria-label={`${r.id === DAY ? "Day overall" : r.title}: ${missWords(r)}`}
                       title={missWords(r)}
-                      className="flex items-center gap-1.5 rounded-full bg-surface/70 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface"
+                      className="flex min-h-10 items-center gap-1.5 rounded-full bg-surface/70 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-surface"
                     >
                       <Icon size={14} strokeWidth={2} aria-hidden />
                       {r.id === DAY ? "Day overall" : r.title}
@@ -291,7 +291,7 @@ export function DayGrid({
                   aria-expanded={isOpen}
                   aria-label={`${name}${isOpen ? ", hide details" : ", show details"}`}
                   onClick={() => onToggle(r.id)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-lg py-1 text-left transition-colors hover:text-ink ${wide ? "w-28" : "w-7 justify-center"} ${isOpen ? "text-ink" : "text-ink/85"}`}
+                  className={`hit-y flex shrink-0 items-center gap-1.5 rounded-lg py-1 text-left transition-colors hover:text-ink ${wide ? "w-28" : "w-7 justify-center"} ${isOpen ? "text-ink" : "text-ink/85"}`}
                 >
                   <Icon size={16} strokeWidth={1.9} className="shrink-0" aria-hidden />
                   {wide && <span className="min-w-0 truncate text-sm font-medium">{name}</span>}
@@ -360,7 +360,7 @@ function Details({ row, onSetup }: { row: RowMirror; onSetup: (sectionId: string
         ) : (
           <>
             Nothing here can be missed yet, so only days not logged count.{" "}
-            <button type="button" onClick={() => onSetup(row.id)} className="font-medium text-ink underline underline-offset-2">
+            <button type="button" onClick={() => onSetup(row.id)} className="hit font-medium text-ink underline underline-offset-2">
               Set a target
             </button>
           </>

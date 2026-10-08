@@ -90,7 +90,7 @@ function CloseButton({ label, onClick }: { label: string; onClick: () => void })
       onClick={onClick}
       aria-label={label}
       title={label}
-      className="-mr-1 flex size-7 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
+      className="hit -mr-1 flex size-7 shrink-0 items-center justify-center rounded-full text-soft transition-colors hover:text-ink"
     >
       <X size={15} />
     </button>
@@ -109,7 +109,7 @@ function FactRow({ fact, onPick, onClose }: { fact: Fact; onPick: (date: string)
               type="button"
               aria-expanded={open}
               onClick={() => setOpen((o) => !o)}
-              className="mt-1 text-xs font-medium text-soft underline underline-offset-2 transition-colors hover:text-ink"
+              className="hit mt-1 text-xs font-medium text-soft underline underline-offset-2 transition-colors hover:text-ink"
             >
               {open ? "Hide the days" : "See the days"}
             </button>

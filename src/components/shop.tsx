@@ -36,7 +36,7 @@ import { TabSkeleton } from "./shell";
 import { Chip } from "./ui";
 
 // Shop: a monthly pocket (the suitcase) and the things you actually need. Three shelves: This month
-// (planned, counted against the pocket), Window (saved to look at later, never counted) and Bought.
+// (planned, counted against the pocket), Saved (to look at later, never counted; "window" in the code) and Bought.
 // Every change goes through `onSend`, which is the app's outbox, so nothing is lost offline.
 
 type View = "month" | "window" | "bought";
@@ -210,7 +210,7 @@ export function Shop({ today, currency, getWaiting, onSend, draft, seed }: Props
     move,
     plan: (item) =>
       put({ ...item, shelf: "month", month, boughtPrice: null, boughtOn: null, sort: nextSort(items.filter((i) => i.shelf === "month" && i.month === month && i.kind === item.kind)) }, "Planned for " + monthName(month)),
-    toWindow: (item) => put({ ...item, shelf: "window", boughtPrice: null, boughtOn: null, sort: nextSort(items.filter((i) => i.shelf === "window")) }, "Moved to Window"),
+    toWindow: (item) => put({ ...item, shelf: "window", boughtPrice: null, boughtOn: null, sort: nextSort(items.filter((i) => i.shelf === "window")) }, "Saved for later"),
     got: (item, paid) => put({ ...item, shelf: "bought", month, boughtPrice: paid ?? item.price, boughtOn: today }, "Marked as bought"),
     skip: (item) => put({ ...item, shelf: "skipped", month, boughtPrice: null, boughtOn: null }, item.price ? `Skipped. That keeps ${money(item.price)} in your pocket.` : "Skipped"),
   };
@@ -357,14 +357,14 @@ function PocketCard({
   return (
     <section className="tile tile-lilac p-5">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={() => onMonth(-1)} aria-label="Earlier month" className="flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-surface/60 active:scale-90">
+        <button type="button" onClick={() => onMonth(-1)} aria-label="Earlier month" className="hit flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-surface/60 active:scale-90">
           <ChevronLeft size={16} />
         </button>
         <div className="min-w-0 flex-1 text-center">
           <p className="truncate text-sm font-semibold">{monthName(month)} {month.slice(0, 4)}</p>
           <p className="text-xs text-soft">{when}</p>
         </div>
-        <button type="button" onClick={() => onMonth(1)} aria-label="Later month" className="flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-surface/60 active:scale-90">
+        <button type="button" onClick={() => onMonth(1)} aria-label="Later month" className="hit flex size-8 shrink-0 items-center justify-center rounded-full border border-ink/15 bg-surface/60 active:scale-90">
           <ChevronRight size={16} />
         </button>
       </div>
@@ -492,7 +492,7 @@ function AddRow({ initial, onAdd }: { initial: string; onAdd: (text: string) => 
 function ShelfTabs({ value, onChange, counts }: { value: View; onChange: (v: View) => void; counts: Record<View, number> }) {
   const tabs: [View, string][] = [
     ["month", "This month"],
-    ["window", "Window"],
+    ["window", "Saved"],
     ["bought", "Bought"],
   ];
   return (
@@ -799,7 +799,7 @@ function Editor({ item, canUp, canDown, money, currency, today, actions }: { ite
         {item.shelf === "month" && (
           <>
             <button type="button" onClick={() => actions.toWindow(item)} className="chip rounded-full px-3 py-1.5 text-xs font-medium">
-              To Window
+              Save for later
             </button>
             <button type="button" onClick={() => actions.skip(item)} className="chip rounded-full px-3 py-1.5 text-xs font-medium">
               Skip it
@@ -807,12 +807,12 @@ function Editor({ item, canUp, canDown, money, currency, today, actions }: { ite
           </>
         )}
         {canUp && (
-          <button type="button" onClick={() => actions.move(item, -1)} aria-label="Move earlier" className="chip flex size-8 items-center justify-center rounded-full">
+          <button type="button" onClick={() => actions.move(item, -1)} aria-label="Move earlier" className="chip flex size-9 items-center justify-center rounded-full">
             <ArrowUp size={14} />
           </button>
         )}
         {canDown && (
-          <button type="button" onClick={() => actions.move(item, 1)} aria-label="Move later" className="chip flex size-8 items-center justify-center rounded-full">
+          <button type="button" onClick={() => actions.move(item, 1)} aria-label="Move later" className="chip flex size-9 items-center justify-center rounded-full">
             <ArrowDown size={14} />
           </button>
         )}
