@@ -4,7 +4,7 @@ import { awayOf, fieldVisible, formatAmount, hasActivity, sectionDone, specAt, s
 
 // The fact engine: what only your own days can say, found by counting, never by guessing.
 //
-// Every day is turned into a handful of plain yes/no/unknown facts ("Sleep was < 5h", "Gym slipped",
+// Every day is turned into a handful of plain yes/no/unknown facts ("Sleep was < 5h", "Gym was missed",
 // "the day was Rough", "it was a Friday"). The engine asks, for each pair, whether one tends to come with the
 // other on the same day or the day after, and says so only when the evidence is real:
 //   - enough days on both sides to compare, and a big gap between the two rates
@@ -105,7 +105,7 @@ type Variable = {
   /** what it is about: a section, the mood, the weekday... a pair from the same group is never asked (it would be one thing said twice) */
   group: string;
   cause?: Cause;
-  /** the end of a sentence: "Gym slipped", "the day was Rough" */
+  /** the end of a sentence: "Gym was missed", "the day was Rough" */
   effect?: string;
   /** where it sits in your day (the order of your sections, the day overall last), so a link is told in the order it happened */
   order: number;
@@ -147,8 +147,8 @@ function build(spec: HabitSpec, entries: Entries, dates: string[], m: Mirror, li
           id: `slip:${sec.id}`,
           group: g,
           order: si,
-          cause: { now: `When ${sec.title} slipped`, before: `The day after ${sec.title} slipped` },
-          effect: `${sec.title} slipped`,
+          cause: { now: `When ${sec.title} was missed`, before: `The day after ${sec.title} was missed` },
+          effect: `${sec.title} was missed`,
           s: series((i) => (row.cells[i].state === "slipped" ? 1 : row.cells[i].state === "done" ? 0 : -1)),
         }),
       );
@@ -294,8 +294,8 @@ function build(spec: HabitSpec, entries: Entries, dates: string[], m: Mirror, li
       id: "day:slip",
       group: "day",
       order: 101,
-      cause: { now: null, before: "The day after a day with a slip", other: "after a day with none" },
-      effect: "something slipped",
+      cause: { now: null, before: "The day after a day with something missed", other: "after a day with none" },
+      effect: "something was missed",
       s: day,
     }),
   );
@@ -484,7 +484,7 @@ function links(vars: Variable[], dates: string[], counts: { tested: number; pass
   );
   counts.confirmed = confirmed.length;
 
-  // the same story told from both ends (the day was Rough / Gym slipped) is kept once, and one story per pair of subjects
+  // the same story told from both ends (the day was Rough / Gym was missed) is kept once, and one story per pair of subjects
   const ranked = confirmed
     .map((f) => ({ f, tier: tierOf(f), score: -Math.log10(Math.max(f.p, 1e-12)) * togetherness(f.t) + (f.cause.order < f.effect.order ? 1e-6 : 0) + (f.effect.id === "mood:rough" ? 2e-6 : 0) }))
     .sort((x, y) => x.tier - y.tier || y.score - x.score);
@@ -557,11 +557,11 @@ function reasons(m: Mirror): Fact[] {
     if (!had || x.p < had.p) best.set(x.r.id, x);
   });
   return [...best.values()].map((x): Fact => {
-    const what = x.r.id === "__day" ? "Rough days" : `${x.r.title} gaps`;
+    const what = x.r.id === "__day" ? "Rough days" : `${x.r.title} misses`;
     return {
       id: `reason:${x.r.id}:${x.key}`,
       kind: "reason",
-      text: `You named ${quoted(labels.get(x.key) ?? x.key)} for ${x.a} of ${x.mine.length} ${what}, against ${x.c} of ${x.others.length} other gaps.`,
+      text: `You named ${quoted(labels.get(x.key) ?? x.key)} for ${x.a} of ${x.mine.length} ${what}, against ${x.c} of ${x.others.length} other misses.`,
       with: [x.a, x.mine.length],
       without: [x.c, x.others.length],
       subjects: [x.r.id === "__day" ? "mood" : `sec:${x.r.id}`],
@@ -576,9 +576,9 @@ function reasons(m: Mirror): Fact[] {
 /**
  * What the last 90 days say that is worth saying, strongest first, at most `max`, and no two about the same
  * thing (a section is spoken about once). Says nothing when there isn't enough to go on: `need` is how many more
- * logged days it wants. Pass `mirror` (built over the last 90 days) when the caller already has one.
+ * logged days it wants. `skip` is the ids of facts the person closed. Pass `mirror` (built over the last `days` days) when the caller already has one.
  */
-export function findFacts(spec: HabitSpec, entries: Entries, today: string, opts: { days?: number; max?: number; mirror?: Mirror } = {}): Facts {
+export function findFacts(spec: HabitSpec, entries: Entries, today: string, opts: { days?: number; max?: number; mirror?: Mirror; skip?: readonly string[] } = {}): Facts {
   const days = opts.days ?? WINDOW;
   const max = opts.max ?? 3;
   const none = (judged: number): Facts => ({ facts: [], judged, need: Math.max(0, FACT_MIN_DAYS - judged), tested: 0, passed: 0, confirmed: 0 });
@@ -602,6 +602,7 @@ export function findFacts(spec: HabitSpec, entries: Entries, today: string, opts
   const facts: Fact[] = [];
   for (const f of all) {
     if (facts.length >= max) break;
+    if (opts.skip?.includes(f.id)) continue; // closed by the person: not shown, and it doesn't hold its place
     if (f.subjects.some((x) => used.has(x))) continue;
     f.subjects.forEach((x) => used.add(x));
     facts.push(f);

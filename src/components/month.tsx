@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Plus, X } from "lucide-react";
-import { dayDone, dayTotal, hasActivity, specAt, type HabitSpec } from "@/lib/spec";
+import { ChevronDown, Plus, X } from "lucide-react";
+import type { HabitSpec } from "@/lib/spec";
 import {
   DAY_TARGET,
   MAX_GOALS,
@@ -19,7 +19,8 @@ import {
   type GoalView,
   type MonthPlan,
 } from "@/lib/goals";
-import { FOCUS_MAX, REVIEW_NOTE_MAX, daysInMonth, monthDates, monthName, shortDate, type Entries } from "@/lib/tracker";
+import { FOCUS_MAX, REVIEW_NOTE_MAX, daysInMonth, monthName, type Entries } from "@/lib/tracker";
+import { Fold } from "./fold";
 import { Chip } from "./ui";
 
 // Monthly = direction. The focus line says where you're heading; goals are measured from what
@@ -212,17 +213,18 @@ function AddGoal({
   );
 }
 
-const MILESTONES = [3, 7, 14, 30, 60, 100];
-
-/** This month: where you're heading, the goals you set for it, and how far along they are. */
+/**
+ * This month's direction. Closed it is one slim line (your focus words and how many goals are on track); tapping it
+ * opens the editor in place: the focus line, the goals, and adding one. The mirror below is the page.
+ */
 export function MonthCard({
   month,
   focus,
   plan,
   lastMonth,
   lastPlan,
-  run,
   onFocus,
+  startOpen = false,
   ...c
 }: Common & {
   month: string;
@@ -230,18 +232,16 @@ export function MonthCard({
   plan: MonthPlan;
   lastMonth: string;
   lastPlan: MonthPlan | undefined;
-  /** days in a row with nothing missed (see cleanRun), and the last day that broke it */
-  run: { days: number; brokeOn: string | null };
   onFocus: (month: string, text: string) => void;
+  /** drawn open (the editor is built straight away); the page leaves it closed */
+  startOpen?: boolean;
 }) {
   const { entries, today, spec, onPlan } = c;
   const [text, setText] = useState(focus);
+  const [open, setOpen] = useState(startOpen);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const dayOfMonth = Number(today.slice(8));
-  const keys = monthDates(month);
-  const logged = keys.filter((k) => hasActivity(entries[k], spec)).length;
-  const next = MILESTONES.find((m) => m > run.days);
 
   const views = goalViews(spec, entries, month, today, plan.goals);
   // goals whose section or question has since been removed aren't shown, so don't let them
@@ -251,101 +251,77 @@ export function MonthCard({
   const taken = new Set(liveGoals.map(goalKey));
   const suggestions = suggestGoals(spec, entries, month, today);
   const canRepeat = liveGoals.length === 0 && (lastPlan?.goals.length ?? 0) > 0;
+  const onTrack = views.filter((v) => v.status === "reached" || v.status === "on-pace").length;
 
   const save = (goals: typeof plan.goals) => onPlan(month, { ...plan, goals });
 
   return (
-    <section className="tile tile-good p-5">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-soft">{monthName(month)} · direction</p>
-        <p className="text-xs text-soft">
-          Day {dayOfMonth} of {daysInMonth(month)}
-        </p>
-      </div>
-
-      <input
-        value={text}
-        maxLength={FOCUS_MAX}
-        onChange={(e) => {
-          const v = e.target.value;
-          setText(v);
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => onFocus(month, v), 1500);
-        }}
-        onBlur={() => {
-          if (timer.current) clearTimeout(timer.current);
-          if (text !== focus) onFocus(month, text);
-        }}
-        placeholder="Where am I heading this month?"
-        className="mt-2 w-full border-b border-ink/25 bg-transparent pb-2 text-lg font-medium outline-none transition-colors placeholder:text-soft focus:border-ink"
-      />
-
-      {views.length > 0 ? (
-        <ul className="mt-4 flex flex-col gap-2">
-          {views.map((v) => (
-            <GoalRow key={v.goal.id} v={v} onRemove={() => save(liveGoals.filter((g) => g.id !== v.goal.id))} />
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-4 text-sm text-ink/85">
-          {monthName(month)} has started. What are you aiming at? Goals are measured from what you already log, so there&apos;s nothing to tick.
-        </p>
-      )}
-
-      {canRepeat && (
-        <button
-          type="button"
-          onClick={() => save(repeatGoals(lastPlan, { goals: liveGoals }))}
-          className="mt-3 mr-2 rounded-full bg-surface/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-surface/80"
-        >
-          Repeat {monthName(lastMonth)}&apos;s goals
-        </button>
-      )}
-
-      {liveGoals.length < MAX_GOALS ? (
-        <AddGoal spec={spec} suggestions={suggestions} taken={taken} onAdd={(g) => save([...liveGoals, { ...g, id: newGoalId(liveGoals) }])} />
-      ) : (
-        <p className="mt-3 text-xs text-soft">That&apos;s {MAX_GOALS} goals, enough to keep the month clear.</p>
-      )}
-
-      <div className="mt-5 flex items-center justify-between text-sm">
-        <span>
-          <b className="text-xl font-semibold tabular-nums">{logged}</b>
-          <span className="text-soft"> / {dayOfMonth} days logged</span>
+    <section className="tile tile-good">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-semibold uppercase tracking-wider text-soft">{monthName(month)} · direction</span>
+          <span className={`block truncate text-base font-semibold leading-snug ${text.trim() ? "" : "text-soft"}`}>{text.trim() || "Where are you heading?"}</span>
         </span>
-        <span className="rounded-full bg-surface/60 px-3 py-1 text-xs font-semibold">
-          {run.days > 0 ? `${run.days} ${run.days === 1 ? "day" : "days"} without a gap` : run.brokeOn ? "Fresh start" : "No run yet"}
-        </span>
-      </div>
+        {views.length > 0 && (
+          <span className="shrink-0 rounded-full bg-surface/60 px-2.5 py-1 text-xs font-semibold">
+            {onTrack} of {views.length} on track
+          </span>
+        )}
+        <ChevronDown size={18} aria-hidden className={`shrink-0 text-soft transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
 
-      <div className="mt-3 flex h-2 gap-0.5">
-        {keys.map((k) => {
-          const e = entries[k];
-          const then = specAt(spec, k);
-          const share = hasActivity(e, spec) ? dayDone(e, k, then) / dayTotal(then, k) : 0;
-          return (
-            <i
-              key={k}
-              className="h-full flex-1 rounded-full transition-colors duration-300"
-              style={{
-                background: hasActivity(e, spec)
-                  ? `color-mix(in oklab, var(--color-ink) ${25 + share * 75}%, transparent)`
-                  : k > today
-                    ? "transparent"
-                    : "color-mix(in oklab, var(--color-ink) 10%, transparent)",
-              }}
-            />
-          );
-        })}
-      </div>
-      {run.days > 0 && next && (
-        <p className="mt-3 text-xs text-soft">
-          {next - run.days} more {next - run.days === 1 ? "day" : "days"} to {next} without a gap.
-        </p>
-      )}
-      {run.days === 0 && run.brokeOn && (
-        <p className="mt-3 text-xs text-soft">The last gap was {shortDate(run.brokeOn)}. Today can start a new run.</p>
-      )}
+      <Fold open={open}>
+        <div className="px-5 pb-5">
+          <p className="text-xs text-soft">
+            Day {dayOfMonth} of {daysInMonth(month)}
+          </p>
+
+          <input
+            value={text}
+            maxLength={FOCUS_MAX}
+            onChange={(e) => {
+              const v = e.target.value;
+              setText(v);
+              if (timer.current) clearTimeout(timer.current);
+              timer.current = setTimeout(() => onFocus(month, v), 1500);
+            }}
+            onBlur={() => {
+              if (timer.current) clearTimeout(timer.current);
+              if (text !== focus) onFocus(month, text);
+            }}
+            placeholder="Where am I heading this month?"
+            className="mt-2 w-full border-b border-ink/25 bg-transparent pb-2 text-lg font-medium outline-none transition-colors placeholder:text-soft focus:border-ink"
+          />
+
+          {views.length > 0 ? (
+            <ul className="mt-4 flex flex-col gap-2">
+              {views.map((v) => (
+                <GoalRow key={v.goal.id} v={v} onRemove={() => save(liveGoals.filter((g) => g.id !== v.goal.id))} />
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-4 text-sm text-ink/85">
+              {monthName(month)} has started. What are you aiming at? Goals are measured from what you already log, so there&apos;s nothing to tick.
+            </p>
+          )}
+
+          {canRepeat && (
+            <button
+              type="button"
+              onClick={() => save(repeatGoals(lastPlan, { goals: liveGoals }))}
+              className="mt-3 mr-2 rounded-full bg-surface/60 px-3.5 py-2 text-sm font-medium transition-colors hover:bg-surface/80"
+            >
+              Repeat {monthName(lastMonth)}&apos;s goals
+            </button>
+          )}
+
+          {liveGoals.length < MAX_GOALS ? (
+            <AddGoal spec={spec} suggestions={suggestions} taken={taken} onAdd={(g) => save([...liveGoals, { ...g, id: newGoalId(liveGoals) }])} />
+          ) : (
+            <p className="mt-3 text-xs text-soft">That&apos;s {MAX_GOALS} goals, enough to keep the month clear.</p>
+          )}
+        </div>
+      </Fold>
     </section>
   );
 }
@@ -371,10 +347,39 @@ export function MonthReview({
   const views = goalViews(spec, entries, month, today, plan.goals);
   const review = plan.review;
   const [note, setNote] = useState(review?.note ?? "");
+  // answered already: it stays as one slim line (to add a note or change the answer), not as the whole card
+  const [open, setOpen] = useState(!review);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setReview = (outcome: "yes" | "partly" | "no" | null, text: string) =>
     onPlan(month, { goals: plan.goals, ...(outcome ? { review: { outcome, note: text } } : {}) });
+
+  function answer(id: (typeof OUTCOMES)[number]["id"]) {
+    const next = review?.outcome === id ? null : id;
+    setReview(next, note);
+    if (next) setOpen(false); // saved: the card closes itself
+  }
+
+  function done() {
+    if (timer.current) clearTimeout(timer.current);
+    if (review && note !== review.note) setReview(review.outcome, note);
+    setOpen(false);
+  }
+
+  if (review && !open) {
+    const word = OUTCOMES.find((o) => o.id === review.outcome)?.label ?? "";
+    return (
+      <section className="tile tile-lilac flex items-center gap-3 px-4 py-3">
+        <p className="min-w-0 flex-1 text-sm leading-snug">
+          <span className="font-semibold">{monthName(month)} reviewed:</span> {word}.
+          {review.note.trim() && <span className="text-soft"> {review.note.length > 60 ? `${review.note.slice(0, 60)}…` : review.note}</span>}
+        </p>
+        <button type="button" onClick={() => setOpen(true)} className="shrink-0 text-sm font-medium underline underline-offset-2">
+          {review.note.trim() ? "Edit" : "Add a note"}
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="tile tile-lilac p-5">
@@ -399,7 +404,7 @@ export function MonthReview({
       <p className="mt-4 text-sm font-semibold">{focus.trim() ? "Did you move toward it?" : "How did the month go?"}</p>
       <div className="mt-2 flex gap-2">
         {OUTCOMES.map((o) => (
-          <Chip key={o.id} on={review?.outcome === o.id} onClick={() => setReview(review?.outcome === o.id ? null : o.id, note)}>
+          <Chip key={o.id} on={review?.outcome === o.id} onClick={() => answer(o.id)}>
             {o.label}
           </Chip>
         ))}
@@ -422,6 +427,13 @@ export function MonthReview({
           placeholder="What got in the way, or what worked? Just for you."
           className="mt-3 w-full border-b border-ink/25 bg-transparent pb-2 text-sm outline-none transition-colors placeholder:text-soft focus:border-ink"
         />
+      )}
+      {review && (
+        <div className="mt-3 flex justify-end">
+          <button type="button" onClick={done} className="rounded-full bg-ink px-4 py-1.5 text-sm font-medium text-cream shadow-md shadow-shade/30 transition-transform active:scale-95">
+            Done
+          </button>
+        </div>
       )}
     </section>
   );

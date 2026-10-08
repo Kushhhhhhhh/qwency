@@ -113,7 +113,7 @@ export function trendLine(
   const direction = gaps > prevGaps ? "up" : gaps < prevGaps ? "down" : "same";
   const unlike = Math.abs(cur.totals.planned - prev.totals.planned) / prev.totals.planned > 0.2;
 
-  const word = (n: number) => (n === 1 ? "gap" : "gaps");
+  const word = (n: number) => (n === 1 ? "miss" : "misses");
   const text = unlike
     ? `${gaps} of ${cur.totals.planned} planned missed, against ${prevGaps} of ${prev.totals.planned} ${label}.`
     : direction === "same"

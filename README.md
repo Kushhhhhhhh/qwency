@@ -34,8 +34,8 @@ If you already ran an older `schema.sql`, just run the new one again — it only
 ## Schedules: what "missed" means
 
 Each section has `days` (0 = Mon … 6 = Sun): when it's *expected*. Everything on the Patterns
-page is measured against that plan (`src/lib/mirror.ts`): **Reality** (done), **Gap** (a
-bad-toned answer, or nothing logged on a planned day) and **Reason** (reason chips, the answer
+page is measured against that plan (`src/lib/mirror.ts`): **Done**, **Missed** (a
+bad-toned answer) and **Not logged** (nothing on a planned day) with a **Why** (reason chips, the answer
 to a dedicated follow-up like "What stopped you?", or a note). A day only counts if it's
 scheduled, on or after your first logged day, on or after the section's `since` date, and not
 today (today's unanswered sections are "open").
@@ -168,11 +168,26 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   the difference. Closing it or finishing is remembered per week (the same small cookie as the catch-up,
   written "w" + that week's Monday). A day with no verdict is explained by whatever reasons its unlogged
   sections were given, so Patterns and the check-in always agree on what is still unexplained.
+- **The Patterns page, top to bottom** (`overview.tsx`, `mirror-card.tsx`, `noticing.tsx`, `month.tsx`), in plain
+  words: *Done*, *Missed* (it landed on the wrong side of the line you drew), *Not logged*, *Why*.
+  1. Last month's review, only until it is answered. Answering saves and folds the card to one slim line
+     ("September reviewed: Yes. Add a note"); it is gone after the 10th.
+  2. This month's direction as **one slim line** (your words and "2 of 3 on track"). Tapping it opens the
+     focus line and the goals in place.
+  3. **The mirror**: "You did 40 of 44 planned things", a bar of done / missed / not logged, how it compares
+     with before, and **which sections were missed, by name** with how many (a tap opens that section's detail).
+  4. **Day by day**: one grid for the whole window, a row per section (your order, the day overall last) and a
+     square per day. The day overall shows Good / Okay / Rough colours. A row opens for its detail (done, missed,
+     not logged, why, what the line was, where a number went, notes). Long windows keep the squares and drop the
+     names to icons.
+  5. **Worth noticing** (below). Every fact has its own ✕ and stays closed in this browser; the "starts after
+     about 3 weeks" message can be closed too, and facts show again once there are some.
+  6. The 10-week heatmap.
 - **Patterns says more, carefully** (all derived, nothing new to log): how this window compares with
   the one before (skipped when the earlier window began before you did, `src/lib/insights.ts`), the
   weekday that slips clearly more than the rest (needs about a month), and "worth noticing", below.
 - **Worth noticing: the fact engine** (`src/lib/facts.ts`, no AI, no network). What only your own days can
-  say, found by counting. Each day becomes a few yes / no / unknown facts (Sleep slipped, Gym was
+  say, found by counting. Each day becomes a few yes / no / unknown facts (Sleep was missed, Gym was
   Skipped, the day was Rough, it was a Friday, nothing was logged) and every pair is asked: does one go
   with the other, the same day or the day after? A pair is only reported when all of this holds:
   enough days on both sides; a gap of at least 30 points between the two rates; Fisher's exact test
@@ -186,8 +201,8 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   left blank" only counts on a day something else was logged. A day you logged nothing at all is its own
   fact ("On weekends, nothing was logged 24 of 24 times"; "The day after a Rough day, nothing was
   logged"), and only between your first and latest day. A second kind says which shared reason you name
-  for a section's gaps against everyone else's ("You named “Tired” for 9 of 12 Gym gaps, against 3 of
-  25 other gaps"); a reason that only one question offers is never reported. Every line carries its
+  for a section's misses against everyone else's ("You named “Tired” for 9 of 12 Gym misses, against 3 of
+  25 other misses"); a reason that only one question offers is never reported. Every line carries its
   counts and **the days it came from** ("See the days", each opens that day). It says nothing under 21
   logged days (and says how many more it wants), tells one story per pair of subjects, at most three, and
   never a cause. Same days in, same facts out. Checked against simulated lives: planted links are found;
