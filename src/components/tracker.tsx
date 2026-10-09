@@ -97,9 +97,17 @@ function rememberZone() {
 }
 
 type Status = { kind: "idle" | "saving" | "saved" | "error"; text: string; id: number };
-type ToastApi = { say: (kind: Status["kind"], text: string, hold?: number) => void };
+type ToastApi = { say: (kind: Status["kind"], text: string, hold?: number) => void; settle: () => void };
 
-/** The little "Saving..." / "Saved" pill. It holds its own state, so each blink of it costs one tiny render instead of the whole screen. */
+const SAVING = "Saving…";
+/** a save that takes longer than this gets a "Saving…" line; a quicker one is silent, the tap itself already showed it */
+const SLOW_MS = 1500;
+
+/**
+ * The little pill at the bottom of the screen. It only speaks when there is something to say: a save that failed, one that
+ * is taking long, or news the tap itself doesn't show. It holds its own state, so each blink of it costs one tiny render
+ * instead of the whole screen.
+ */
 function Toast({ api }: { api: Ref<ToastApi> }) {
   const [status, setStatus] = useState<Status>({ kind: "idle", text: "", id: 0 });
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +120,10 @@ function Toast({ api }: { api: Ref<ToastApi> }) {
         // a plain "Saved" goes quickly; a heads-up that has to be read stays as long as it was asked to
         const ms = hold ?? (kind === "saved" ? 1600 : 0);
         if (ms > 0) timer.current = setTimeout(() => setStatus((st) => ({ ...st, kind: "idle" })), ms);
+      },
+      // the slow save came through: take "Saving…" down (and only that: a warning or other news stays)
+      settle() {
+        setStatus((st) => (st.kind === "saving" && st.text === SAVING ? { ...st, kind: "idle" } : st));
       },
     }),
     [],
@@ -535,11 +547,22 @@ function TrackerView({
     return deliver(op);
   }
 
-  async function persist(op: Op, okText = "Saved"): Promise<boolean> {
-    say("saving", "Saving…");
+  /**
+   * A tap's save. When it works it says nothing (the chip filled, the ring moved: that is the answer), unless there is
+   * `news` the tap doesn't show by itself ("Day complete", an item moved to another shelf). It speaks up if the save fails,
+   * and if it is slow, so a long wait isn't mistaken for nothing happening.
+   */
+  async function persist(op: Op, news?: string): Promise<boolean> {
+    let slow = false;
+    const timer = setTimeout(() => {
+      slow = true;
+      say("saving", SAVING);
+    }, SLOW_MS);
     const ok = await send(op);
-    if (ok) say("saved", okText);
-    else say("error", NOT_SAVED);
+    clearTimeout(timer);
+    if (!ok) say("error", NOT_SAVED);
+    else if (news) say("saved", news);
+    else if (slow) toast.current?.settle();
     return ok;
   }
 
@@ -552,8 +575,8 @@ function TrackerView({
 
   const haptic = (ms: number) => typeof navigator !== "undefined" && navigator.vibrate?.(ms);
 
-  /** Apply a change to the selected day; returns the toast text ("Day complete" beats "Saved"). */
-  function change(next: Entry): string {
+  /** Apply a change to the selected day; returns the one line worth saying out loud, if any (the day just became complete). */
+  function change(next: Entry): string | undefined {
     const date = selected!;
     const then = specAt(spec, date);
     const total = dayTotal(then, date);
@@ -561,7 +584,7 @@ function TrackerView({
     const after = dayDone(next, date, then);
     mutate((prev) => ({ ...prev, [date]: next }));
     setPulse((p) => ({ date, n: p.n + 1 }));
-    return after === total && before < total ? "Day complete. Nice work." : "Saved";
+    return after === total && before < total ? "Day complete. Nice work." : undefined;
   }
 
   function setField(key: string, value: string | number | string[] | undefined) {
@@ -575,8 +598,8 @@ function TrackerView({
     const { set, remove } = diffData(cur.data, clean);
     const date = selected;
     haptic(8);
-    const text = change({ ...cur, data: clean });
-    persist({ kind: "data", date, set, remove }, text);
+    const news = change({ ...cur, data: clean });
+    persist({ kind: "data", date, set, remove }, news);
   }
 
   // "why did this slip" tags for a field live under a companion key in the same `data` blob —
@@ -677,8 +700,8 @@ function TrackerView({
     const next: Mood | null = cur.mood === mood ? null : mood;
     const date = selected;
     haptic(next === "bad" ? 24 : 12);
-    const text = change({ ...cur, mood: next, tags: next === "bad" ? cur.tags : [] });
-    persist({ kind: "mood", date, mood: next }, next ? (text === "Saved" ? CHEERS[next][Math.floor(Math.random() * CHEERS[next].length)] : text) : "Cleared");
+    const news = change({ ...cur, mood: next, tags: next === "bad" ? cur.tags : [] });
+    persist({ kind: "mood", date, mood: next }, next ? (news ?? CHEERS[next][Math.floor(Math.random() * CHEERS[next].length)]) : undefined);
   }
 
   // functional updates: these can fire late (debounce / unmount), so never trust a captured entry
@@ -691,7 +714,7 @@ function TrackerView({
     const date = selected;
     haptic(6);
     patchDay(date, { tags });
-    persist({ kind: "tags", date, tags }, "Reason saved");
+    persist({ kind: "tags", date, tags });
   }
 
   function pickNote(note: string) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, Frown, Meh, Smile } from "lucide-react";
 import { iconFor } from "@/lib/icons";
 import { MOODS, NOTE_MAX, type Entry, type Mood } from "@/lib/tracker";
@@ -13,13 +13,11 @@ import { WhySelector } from "./why-selector";
 export const TILE_VARIANTS = ["lilac", "meh", "good"] as const;
 export type TileVariant = (typeof TILE_VARIANTS)[number];
 
-/** how long a finished section stays open after the last answer, so a wrong tap can be put right before it folds */
-const TUCK_MS = 900;
-
 /**
- * One section of the day. While there is still something to answer it is a coloured card with its questions; once it
- * is finished (see lib/today) it folds into one quiet line ("Sleep · 6–7h") that opens again when tapped. So colour
- * means "still to do", and the page gets shorter as the day gets done.
+ * One section of the day. While there is still something to answer it is a coloured card with its questions. A section
+ * that was already finished when the day opened (see lib/today) is drawn as one quiet line ("Sleep · 6–7h") that opens
+ * when tapped; one you finish just now stays open under your finger, with a chevron to tuck it away. So colour means
+ * "still to do", and the page is shorter every time you come back to it.
  */
 export function SectionCard({
   icon,
@@ -55,21 +53,14 @@ export function SectionCard({
   children: ReactNode;
 }) {
   const Icon = iconFor(icon);
-  // drawn folded if it was already finished; otherwise it folds a moment after it is
-  const [settled, setSettled] = useState(complete);
-  if (!complete && settled) setSettled(false);
-  useEffect(() => {
-    if (!complete || settled) return;
-    const t = setTimeout(() => setSettled(true), TUCK_MS);
-    return () => clearTimeout(t);
-  }, [complete, settled]);
-  // opened by hand: it stays open until it is edited back to unfinished, or tapped shut
-  const [userOpen, setUserOpen] = useState(false);
-  if (!complete && userOpen) setUserOpen(false);
+  // A card is folded only if it was already finished when the day was opened, or you tucked it away yourself. One you
+  // are answering never closes on its own, however fast you tap (a second answer, a muscle, a note can still follow).
+  const [foldedAtStart] = useState(complete);
+  const [byHand, setByHand] = useState<boolean | null>(null); // true: you opened it, false: you tucked it away
   const [noteOpen, setNoteOpen] = useState(Boolean(note.value));
 
-  const folded = complete && settled && !userOpen;
-  const canFold = complete && settled;
+  const folded = complete && (byHand === null ? foldedAtStart : !byHand);
+  const canFold = complete;
 
   const head = (
     <>
@@ -98,7 +89,7 @@ export function SectionCard({
       <div className={`transition-opacity ${muted ? "opacity-80" : ""}`}>
         <header className="flex items-center gap-3">
           {canFold ? (
-            <button type="button" aria-expanded={!folded} onClick={() => setUserOpen((o) => !o)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+            <button type="button" aria-expanded={!folded} onClick={() => setByHand(folded)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
               {head}
               <ChevronDown size={16} aria-hidden className={`shrink-0 text-soft transition-transform duration-200 ${folded ? "" : "rotate-180"}`} />
             </button>

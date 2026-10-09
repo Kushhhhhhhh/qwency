@@ -79,6 +79,12 @@ The app outlives the day: phones park tabs for hours. Three rules keep that safe
   `src/lib/sync.ts`): when the tab returns to the foreground, "today" rolls forward (and you
   follow it if you were on "today"), and the server's state is folded in. It only does this at
   most every 15s, and never while a save is in flight or if you edited meanwhile.
+- **Saving is quiet.** A tap that saves fine says nothing: the chip filling in and the ring moving are the answer, so
+  there is no "Saved" pill after every tap. The pill at the bottom speaks only when there is something to say: a save
+  that failed ("Not saved yet. Will retry."), a save that is taking longer than 1.5 seconds ("Saving…", which goes
+  without a word once it is through), "Caught up. Everything is saved." after a failure is put right, and news the tap
+  doesn't show by itself (the day just became complete, a small line after the day's mood, a day marked away, a
+  Shop item moving to another shelf). `persist` in `tracker.tsx` is where that is decided.
 - **Nothing unsaved is overwritten, and nothing unsaved is lost.** Every change goes into an
   *outbox* before it is sent and is crossed off when the server confirms it (see "The outbox"
   below). Until then a refresh keeps the screen's copy of that day.
@@ -148,14 +154,15 @@ every column, so a missing one just means no goals yet) but saving goals fails.
   3. **The day overall comes first**, as one slim card: three faces ("How's today going?"). That is the lightest
      possible way to log a day. A Rough day asks "What got in the way?" right under the faces; the day's note
      (the pen) and "mark it away" live in the same card.
-  4. **Each section folds into one line when it is finished** ("Sleep · 6–7h", with a red dot and "(missed)" for
-     the screen reader if an answer went the wrong way): a coloured card means "still to do", a quiet one means
-     "done", and the page gets shorter as the day gets done. "Finished" is `sectionComplete`: every question
-     that is showing and has to be answered is answered, a counter has reached its goal (on a past day there
-     is nothing left to reach), and picks you may or may not make (which muscles, a reason after a skip) never
-     keep it open. It folds a moment (about a second) after the last answer so a wrong tap can be put right,
-     opens again when tapped, and a day opened later is drawn already folded (its questions aren't even built
-     until opened).
+  4. **A section you finished earlier is one line** ("Sleep · 6–7h", with a red dot and "(missed)" for the screen
+     reader if an answer went the wrong way): a coloured card means "still to do", a quiet one means "done", and
+     the page is shorter every time you come back to it. "Finished" is `sectionComplete`: every question that is
+     showing and has to be answered is answered, a counter has reached its goal (on a past day there is nothing
+     left to reach), and picks you may or may not make (which muscles, a reason after a skip) never keep it open.
+     Folding happens only when the day is opened (leaving the tab and coming back, or choosing another day, counts)
+     or when you tap the chevron yourself. **A card you are answering never closes on its own**, however fast you
+     tap, so a second answer, a muscle or a note can always follow. A folded line opens when tapped, and then
+     stays open until you tuck it away.
   5. **One pen per card** opens that section's note (a dot says there is one), instead of a "+ Note" line under
      every card; "add your own, for this day only" is a small + after the options.
   Touch: an answer you tap is 44px tall, the small reason chips 36px, and small links and close buttons keep
